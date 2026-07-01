@@ -2,7 +2,7 @@
 
 ## Overview
 
-This script extracts structured data (name, ID number, dates, address, etc.) from photos of Thai National ID cards using a local vision-language model served by Ollama. It works in three stages: raw OCR, LLM structuring, and deterministic post-processing — with a regex-based fallback if the LLM stumbles.
+This script extracts structured data (name, ID number, dates, address, etc.) from photos of Thai National ID cards using a local vision-language model served by Ollama. It works in two stages: raw OCR, then deterministic, regex-based field extraction. There is no second LLM call to "structure" the data — an earlier version tried that and found the model would hallucinate or garble fields, especially dates and names, so extraction is now pure rule-based on top of the raw OCR text.
 
 ## Pipeline
 
@@ -10,46 +10,53 @@ This script extracts structured data (name, ID number, dates, address, etc.) fro
 
 Each image is resized (long edge capped at 1024px) and sent to the vision model with a simple instruction: read every visible line of text, Thai and English, and output it raw — no formatting, no JSON. This keeps the model's job in this step narrow and reliable: just transcription, not interpretation.
 
-### Step 2 — Structuring (text → JSON)
+### Step 2 — Field extraction (text → JSON, rule-based)
 
-The raw OCR text is sent back to the model (no image this time) with a second prompt that defines the target schema and field-mapping rules — e.g. `เลขประจำตัวประชาชน` → `id_number`, the Thai name line → `name_th`, English `Name` + `Last name` lines combined into `name_en`, and so on. The model is asked to return only a JSON object.
+The raw OCR text is parsed directly with deterministic regex and keyword-anchored extraction — no model call involved:
 
-This step is retried once if the response can't be parsed as JSON (the model occasionally ignores the instruction and returns something else). If both attempts fail, the script falls back to **Step 3b** below instead of giving up on the record.
-
-### Step 3 — Post-processing (deterministic fixes)
-
-LLMs are good at structuring but unreliable at exact digit/date transcription, so a set of deterministic, regex-based passes run on top of the LLM's JSON to correct the fields that matter most for accuracy:
-
-- **ID number** — re-extracted from the raw OCR text with a pattern matching the card's digit grouping (`X XXXX XXXXX XX X`), falling back to any 13-digit run, used to override the LLM's value if it's missing or malformed.
-- **Dates** — Thai dates use the Buddhist calendar and abbreviated month names that OCR often garbles (e.g. `พ.8.` instead of `พ.ย.`). A lookup table of Thai and English month names/abbreviations (plus a table of common OCR misreads) is used to re-parse `date_of_birth`, `date_of_issue`, and `date_of_expiry` straight from the raw text whenever the LLM's value doesn't already look like a clean `DD/MM/YYYY` string, with the Buddhist year converted to the Christian year.
-- **Names** — `name_en` has the literal label "Last name" stripped out if the model echoed it, and a space is enforced after English titles (`Mr.`, `Mrs.`, etc). `name_th` gets the same treatment for Thai honorific prefixes (`นาย`, `นาง`, `นางสาว`, `น.ส.`, `ด.ช.`, `ด.ญ.`), inserting a space after the prefix only if one is missing.
+- **Keyword anchoring** — Since the OCR engine doesn't reliably emit newlines between fields (the whole card can come back as one unbroken block of text), each field is located by finding its printed label (e.g. `ที่อยู่`, `ศาสนา`, `Name`) and reading a bounded window of text right after it, cut off at whichever comes first: the next label or a max length. When a field does get split across two OCR lines (e.g. `"Name Miss Rungaroon"` / `"Last name Khemthong"`), internal whitespace/newlines are collapsed to a single space so it's still read correctly.
+- **ID number** — extracted with a pattern matching the card's digit grouping (`X XXXX XXXXX XX X`), falling back to any 13-digit run in the text.
+- **Dates** — Thai dates use the Buddhist calendar and abbreviated month names that OCR often garbles (e.g. `พ.8.` instead of `พ.ย.`). Lookup tables of Thai and English month names/abbreviations, plus a table of common OCR misreads, are used to parse `date_of_issue` and `date_of_expiry` from the text right next to each date's own label — this keeps the parser from matching whichever date happens to appear first if several are present. Buddhist years are converted to the Christian calendar.
+- **Date of birth (with cross-check)** — Thai ID cards print the date of birth twice: once in Thai (Buddhist calendar) and once in English (Christian calendar). Both are extracted and parsed independently, giving `date_of_birth_th`, `date_of_birth_en` (raw, as printed), a unified `date_of_birth`, and `date_of_birth_match` — whether the two printed dates agree, as a sanity check on OCR quality.
+- **Names** — the Thai name is split into `prefix_th` / `first_name_th` / `last_name_th` using a list of honorifics (`นาย`, `นาง`, `นางสาว`, `น.ส.`, `ด.ช.`, `ด.ญ.`, etc.), inserting a space after the prefix if OCR ran it together with the name. The English name is split into `prefix_en` / `first_name_en` / `last_name_en` the same way (`Mr.`, `Mrs.`, `Miss`, `Ms.`, `Dr.`), with the literal `"Last name"` label stripped out if OCR echoed it.
+- **Address** — the full registered address is captured as printed (`address`), and `tambon`, `amphoe`, and `province` are additionally split back out of it using the `ต./ตำบล/แขวง`, `อ./อำเภอ/เขต`, and `จ./จังหวัด` markers respectively (Bangkok addresses, which use `แขวง`/`เขต` and often print `กรุงเทพมหานคร` with no `จ.` marker, are handled as well).
 - **Whitespace** — all string fields are trimmed.
 
-### Step 3b — Fallback extraction (used only if Step 2 fails twice)
+### Error handling
 
-If the structuring model fails to return valid JSON on both attempts, the script doesn't discard the record — it builds one directly from the raw OCR text using the same regex logic as the post-processing step: ID number, dates, religion, address, and the Thai/English name lines are pulled out independently. The result is flagged with `_fallback_extraction: true` and includes `_structured_response` (what the model actually returned) so the failure can be inspected.
+- If Step 1 (the OCR call to Ollama) fails, e.g. a network or API error, the record gets an `_error` field describing the failure and an empty `raw_ocr_text`.
+- If Step 2 (field extraction) throws an unexpected exception, the record gets an `_error` field, but `raw_ocr_text` is preserved so the raw transcription can still be inspected.
 
 ## Output Fields
 
 | Field | Description |
 |---|---|
 | `id_number` | 13-digit Thai national ID number, digits only (no spaces). |
-| `name_th` | Full name in Thai, including honorific prefix (e.g. `นาย`, `นาง`, `นางสาว`, `น.ส.`). |
-| `name_en` | Full name in English, formatted as `Title. Firstname Lastname`. |
-| `date_of_birth` | Date of birth, `DD/MM/YYYY`, Christian calendar. |
+| `prefix_th` | Thai honorific prefix (e.g. `นาย`, `นาง`, `นางสาว`, `น.ส.`). |
+| `first_name_th` | First name in Thai. |
+| `last_name_th` | Last name in Thai. |
+| `prefix_en` | English title (e.g. `Mr.`, `Mrs.`, `Miss`, `Ms.`, `Dr.`). |
+| `first_name_en` | First name in English. |
+| `last_name_en` | Last name in English. |
+| `date_of_birth_th` | Date of birth as printed in Thai (Buddhist calendar), e.g. `23 ก.ย. 2540`. |
+| `date_of_birth_en` | Date of birth as printed in English (Christian calendar), e.g. `23 Sep. 1997`. |
+| `date_of_birth` | Unified date of birth, `DD/MM/YYYY`, Christian calendar. |
+| `date_of_birth_match` | `true`/`false` if both the Thai and English printed dates were found and compared; `null` if either couldn't be read. |
 | `religion` | Religion as printed on the card (e.g. `พุทธ`). |
-| `address_th` | Registered address in Thai. |
+| `address` | Full registered address in Thai, as printed. |
+| `tambon` | Sub-district, split out of `address`. |
+| `amphoe` | District, split out of `address`. |
+| `province` | Province, split out of `address`. |
 | `date_of_issue` | Card issue date, `DD/MM/YYYY`, Christian calendar. |
 | `date_of_expiry` | Card expiry date, `DD/MM/YYYY`, Christian calendar. |
+| `raw_ocr_text` | The full, unprocessed OCR transcription for this image — always included, useful for debugging any field above. |
 
 Any field that's missing, unreadable, or not present on the card is `null`.
 
-A few extra fields appear only when something went wrong:
+A field appears only if something went wrong:
 
 | Field | Description |
 |---|---|
-| `_fallback_extraction` | `true` if the LLM's structuring step failed and the record was built via regex extraction instead (see Step 3b). |
-| `_structured_response` | The model's raw, unparseable response — only present when `_fallback_extraction` is `true`, useful for debugging. |
-| `_error` | Present if Step 1 or 2 failed outright (e.g. network/API error); the record has no usable fields in this case. |
+| `_error` | Present if Step 1 or Step 2 failed outright (e.g. network/API error, or an exception during extraction); other fields on the record may be missing or unreliable in this case. |
 
 All results across the processed images are collected into a single `ocr_results.json`, keyed by filename.
