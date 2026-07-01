@@ -1,5 +1,84 @@
 # Thai National ID OCR Pipeline
 
+# Setup
+
+## 1. Install Python dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+(Everything else the script uses — `base64`, `io`, `json`, `re`, `urllib`, `pathlib` — is in the Python standard library.)
+
+## 2. Install Ollama
+
+**macOS**
+```bash
+brew install ollama
+```
+or download the app from https://ollama.com/download
+
+**Linux**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows**
+Download the installer from https://ollama.com/download
+
+## 3. Start the Ollama server
+
+Ollama usually installs itself as a background service and starts automatically. If it's not already running:
+
+```bash
+ollama serve
+```
+
+Leave this running in its own terminal (skip this step if `ollama` was installed as a system service and is already listening).
+
+## 4. Pull the vision model
+
+```bash
+ollama pull scb10x/typhoon-ocr1.5-3b:latest
+```
+
+This is a ~3B-parameter vision-language model, so expect a multi-GB download. Confirm it's available:
+
+```bash
+ollama list
+```
+
+Optional sanity check that the model can actually see images:
+
+```bash
+ollama run scb10x/typhoon-ocr1.5-3b:latest
+```
+(type a prompt, or exit with `/bye` — this just confirms the model loads)
+
+## 5. Add your images
+
+Put the ID card photos into the `ids/` folder next to the script (create it if it doesn't exist):
+
+```bash
+mkdir -p ids
+# copy .jpg / .jpeg / .png files into ids/
+```
+
+## 6. Run the pipeline
+
+```bash
+python ocr_pipeline.py
+```
+
+Results are written to `ocr_results.json` in the same directory.
+
+## Notes / troubleshooting
+
+- The script calls the Ollama HTTP API at `http://localhost:11434/api/chat`. If you changed Ollama's host/port, update `OLLAMA_URL` in the script.
+- If you have limited VRAM, the default `MAX_LONG_EDGE = 1024` keeps images small; lower it further (e.g. `768`) if you hit out-of-memory errors, or raise it if you have headroom and want potentially better OCR accuracy on small text.
+- First request to a freshly pulled model can be slow while Ollama loads it into memory — this is normal, later requests are faster.
+- If `ocr_image()` reports an `_error` for every file, check that `ollama serve` is running and that `ollama list` shows the model.
+  
 ## Overview
 
 This script extracts structured data (name, ID number, dates, address, etc.) from photos of Thai National ID cards using a local vision-language model served by Ollama. It works in two stages: raw OCR, then deterministic, regex-based field extraction. There is no second LLM call to "structure" the data — an earlier version tried that and found the model would hallucinate or garble fields, especially dates and names, so extraction is now pure rule-based on top of the raw OCR text.
