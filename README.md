@@ -67,7 +67,7 @@ mkdir -p ids
 ## 6. Run the pipeline
 
 ```bash
-python ocr_pipeline.py
+python typhoon_test.py
 ```
 
 Results are written to `ocr_results.json` in the same directory.
