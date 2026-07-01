@@ -21,44 +21,15 @@ EXTENSIONS  = {".jpg", ".jpeg", ".png"}
 # Max long edge for image, can increase if you have enough GPU vRAM as it will increase tokens (will possibly improve accuracy)
 MAX_LONG_EDGE = 1024
 
-# Step 1: Ask the model to dump all visible text
+# Ask the model to dump all visible text
 EXTRACT_PROMPT = """\
 You are an OCR engine. Read this Thai National ID card image and output every line of text you can see, exactly as printed.
 Output raw text only. Preserve both Thai and English lines. No formatting, no JSON, no explanation."""
 
-# Step 2: Ask the model to structure the raw text into a fixed JSON schema
-STRUCTURE_PROMPT = """\
-You are a data extraction engine. Given raw OCR text from a Thai National ID card, extract the fields into a JSON object.
-
-Field mapping rules:
-- "เลขประจำตัวประชาชน" or "Identification Number" → "id_number" (digits only, remove spaces)
-- "ชื่อตัวและชื่อสกุล" (Thai name line) → "name_th"
-- "Name" + "Last name" (English lines) → combine into "name_en", skip the literal word "Last name" if it appears as a label, format as "Title. Firstname Lastname" with a space after the title/prefix
-- "เกิดวันที่" or "Date of Birth" → "date_of_birth" (English date preferred, format DD/MM/YYYY)
-- "ศาสนา" → "religion"
-- "ที่อยู่" → "address_th"
-- "วันออกบัตร" or "Date of Issue" → "date_of_issue" (English date preferred, format DD/MM/YYYY)
-- "วันบัตรหมดอายุ" or "Date of Expiry" → "date_of_expiry" (English date preferred, format DD/MM/YYYY)
-
-Rules:
-- Return ONLY a valid JSON object, no markdown, no explanation
-- If a field is missing or unreadable use null
-- For dates prefer the English version if both Thai and English are present
-- Remove any MRZ/barcode lines (long digit strings at the bottom)
-
-RAW OCR TEXT:
-{raw_text}"""
-
 OPTIONS_EXTRACT = {
     "temperature": 0,
     "num_predict": 800,
-    "repeat_penalty": 1.2,
-}
-
-OPTIONS_STRUCTURE = {
-    "temperature": 0,
-    "num_predict": 512,
-    "repeat_penalty": 1.1,
+    "repeat_penalty": 1.2, # Prevent the model from repeating the same line over and over
 }
 
 # ── Thai/English month mappings (copied from PaddleOCR pipeline) ────────────────────
@@ -118,10 +89,13 @@ _TH_NAME_PREFIXES_NORMALIZED = {
     "ด.ช.": "ด.ช.", "ด.ช": "ด.ช.", "ด.ญ.": "ด.ญ.", "ด.ญ": "ด.ญ.",
 }
 
+_EN_NAME_PREFIXES = ("Mr.", "Mrs.", "Miss", "Ms.", "Dr.")
+
 # ── Post-processing helpers ───────────────────────────────────────────────────
 
 def fix_name_en(name: str) -> str:
-    """Remove literal 'Last name' label and ensure space after title prefix."""
+    """Remove literal 'Last name' label and ensure space after title prefix.
+    e.g. "Mr.Julian" -> "Mr. Julian", "Last name Casablancas" -> "Casablancas" """
     if not name:
         return name
     # Remove literal OCR label artifacts
@@ -133,7 +107,9 @@ def fix_name_en(name: str) -> str:
     return name
 
 def fix_name_th(name: str) -> str:
-    """Ensure a space after common Thai name prefixes/honorifics."""
+    """Ensure a space after common Thai name prefixes/honorifics.
+    e.g. "นายชีโน่" -> "นาย ชีโน่"""
+
     if not name:
         return name
     for prefix in sorted(_TH_NAME_PREFIXES, key=len, reverse=True):
@@ -146,41 +122,139 @@ def fix_name_th(name: str) -> str:
     name = re.sub(r" {2,}", " ", name).strip()
     return name
 
+
+def split_th_name(name: str) -> dict:
+    """
+    Split a Thai full name (optionally including a title/prefix) into its
+    prefix, first name, and last name components.
+    e.g. "เคิร์ต โคเบน" -> {"first_name_th": "เคิร์ต", "last_name_th": "โคเบน"}    
+    """
+    parts_result = {"prefix_th": None, "first_name_th": None, "last_name_th": None}
+    if not name:
+        return parts_result
+
+    name = fix_name_th(name)
+    rest = name
+    for prefix in sorted(_TH_NAME_PREFIXES, key=len, reverse=True):
+        normalized = _TH_NAME_PREFIXES_NORMALIZED[prefix]
+        if name.startswith(normalized):
+            parts_result["prefix_th"] = normalized
+            rest = name[len(normalized):].strip()
+            break
+
+    tokens = rest.split(None, 1)
+    if tokens:
+        parts_result["first_name_th"] = tokens[0].strip() or None
+    if len(tokens) > 1:
+        parts_result["last_name_th"] = tokens[1].strip() or None
+
+    return parts_result
+
+
+def split_en_name(name: str) -> dict:
+    """
+    Split an English full name (optionally including a title/prefix) into its
+    prefix, first name, and last name components.
+    e.g. "Mr. Serj Tankian" -> {"prefix_en": "Mr.", "first_name_en": "Serj", "last_name_en": "Tankian"}
+    """
+    parts_result = {"prefix_en": None, "first_name_en": None, "last_name_en": None}
+    if not name:
+        return parts_result
+
+    name = fix_name_en(name)
+    rest = name
+    match = re.match(r"^(Mr\.|Mrs\.|Miss|Ms\.|Dr\.)\s+(.*)$", name, flags=re.IGNORECASE)
+    if match:
+        parts_result["prefix_en"] = match.group(1)
+        rest = match.group(2).strip()
+
+    tokens = rest.split()
+    if tokens:
+        parts_result["first_name_en"] = tokens[0].strip() or None
+    if len(tokens) > 1:
+        parts_result["last_name_en"] = " ".join(tokens[1:]).strip() or None
+
+    return parts_result
+
+
 def fix_ocr_month(text: str) -> str:
-    """Fix common OCR misreads in Thai month abbreviations before parsing."""
+    """Fix common OCR misreads in Thai month abbreviations before parsing.
+    e.g. "พ.8." -> "พ.ย.", "ม.1" -> "ม.ค" """
+
     for wrong, right in _OCR_MONTH_FIXES.items():
         if wrong in text:
             text = text.replace(wrong, right)
     return text
 
+
+# Anchor regex patterns for Thai and English dates, using the month mappings above.
+_TH_MONTH_ALT = "|".join(re.escape(m) for m in sorted(_TH_MONTHS, key=len, reverse=True))
+_TH_DATE_PATTERN = re.compile(r"(\d{1,2})\s*(" + _TH_MONTH_ALT + r")\s*(\d{2,4})")
+
+_EN_MONTH_ALT = "|".join(re.escape(m) for m in sorted(_EN_MONTHS, key=len, reverse=True))
+_EN_DATE_PATTERN = re.compile(r"(\d{1,2})\s*(" + _EN_MONTH_ALT + r")\.?,?\s*(\d{2,4})", re.IGNORECASE)
+
+
 def parse_thai_date(text: str) -> str:
-    """Parse a Thai or English date string → DD/MM/YYYY. Returns '' if unparseable."""
+    """Parse a Thai or English date string → DD/MM/YYYY. Returns '' if unparseable.
+
+    e.g. "23 ก.ย. 2540" → "23/09/1997", "23 Sep. 1997" → "23/09/1997"
+    """
     text = fix_ocr_month(text.strip())
 
-    # Try Thai months (longest match first to avoid partial matches)
-    for th_month, mm in sorted(_TH_MONTHS.items(), key=lambda x: -len(x[0])):
-        if th_month in text:
-            parts = re.findall(r"\d+", text)
-            if len(parts) >= 2:
-                day = parts[0].zfill(2)
-                year_be = int(parts[-1])
-                # Convert Buddhist year to Christian year
-                year_ce = year_be - 543 if year_be > 2400 else year_be
-                return f"{day}/{mm}/{year_ce}"
+    # Try Thai months first
+    m = _TH_DATE_PATTERN.search(text)
+    if m:
+        day = m.group(1).zfill(2)
+        mm = _TH_MONTHS[m.group(2)]
+        year_be = int(m.group(3))
+        if year_be < 100:
+            year_be += 2500
+        # Convert Buddhist year to Christian year
+        year_ce = year_be - 543 if year_be > 2400 else year_be
+        return f"{day}/{mm}/{year_ce}"
 
     # Try English months
-    text_lower = text.lower()
-    for en_month, mm in sorted(_EN_MONTHS.items(), key=lambda x: -len(x[0])):
-        if en_month in text_lower:
-            parts = re.findall(r"\d+", text)
-            if len(parts) >= 2:
-                day = parts[0].zfill(2)
-                year = int(parts[-1])
-                if year < 100:
-                    year += 1900 if year > 50 else 2000
-                return f"{day}/{mm}/{year}"
+    m = _EN_DATE_PATTERN.search(text)
+    if m:
+        day = m.group(1).zfill(2)
+        mm = _EN_MONTHS[m.group(2).lower()]
+        year = int(m.group(3))
+        if year < 100:
+            year += 1900 if year > 50 else 2000
+        return f"{day}/{mm}/{year}"
 
     return ""
+
+
+def window_from(text: str, start_idx: int, stop_keywords: tuple = (), max_len: int = 80) -> str | None:
+    """
+    Return the window of text starting at `start_idx` and extending up to `max_len` characters,
+    this is for extracting text after a keyword in the below functions.
+    """
+    segment = text[start_idx:start_idx + max_len]
+    cut = len(segment)
+    for sk in stop_keywords:
+        pos = segment.find(sk)
+        if pos != -1:
+            cut = min(cut, pos)
+    segment = segment[:cut]
+    # OCR output frequently breaks a single field across multiple lines
+    # (e.g. "Name Miss Rungaroon\nLast name Khemthong"), so collapse any
+    # newlines/whitespace runs inside the window into single spaces before
+    # returning it -- otherwise downstream regexes anchored with ^...$ (like
+    # the prefix match in split_en_name) silently fail to match past the
+    # embedded newline, and everything gets shoved into the wrong field.
+    segment = re.sub(r"\s+", " ", segment).strip()
+    return segment or None
+
+
+def extract_after_keyword(text: str, keyword: str, stop_keywords: tuple = (), max_len: int = 80) -> str | None:
+    """Find `keyword` in `text` and return a bounded window of text right after it."""
+    idx = text.find(keyword)
+    if idx == -1:
+        return None
+    return window_from(text, idx + len(keyword), stop_keywords, max_len)
 
 
 def extract_id_number(texts: list[str]) -> str:
@@ -210,12 +284,57 @@ def extract_id_number(texts: list[str]) -> str:
     return ""
 
 
-def fix_dates_in_result(result: dict, raw_lines: list[str]) -> dict:
+def find_date_near_keyword(text: str, keywords: list[str], window: int = 40) -> str:
     """
-    Re-parse date fields from raw OCR lines if the LLM returned garbled dates.
+    Search `text` for any of the `keywords`, and if found, look for a Thai or English date
+    around that keyword within `window` characters. Returns the first parsed date found, or '' if none.
+    """
+    lower = text.lower()
+    for kw in keywords:
+        kw_lower = kw.lower()
+        search_start = 0
+        while True:
+            idx = lower.find(kw_lower, search_start)
+            if idx == -1:
+                break
+            segment = text[idx: idx + len(kw) + window]
+            found = parse_thai_date(segment)
+            if found:
+                return found
+            search_start = idx + len(kw)
+    return ""
+
+
+def find_date_raw_and_parsed(text: str, keywords: list[str], pattern: re.Pattern, window: int = 40) -> tuple[str, str]:
+    """
+    Search `text` for any of the `keywords`, and if found, look for a Thai or English date
+    around that keyword within `window` characters. Returns a tuple of (raw_date_string, parsed_date_string) or ("", "") if none found.
+    """
+    lower = text.lower()
+    for kw in keywords:
+        kw_lower = kw.lower()
+        search_start = 0
+        while True:
+            idx = lower.find(kw_lower, search_start)
+            if idx == -1:
+                break
+            segment = text[idx: idx + len(kw) + window]
+            m = pattern.search(fix_ocr_month(segment))
+            if m:
+                raw = m.group(0).strip()
+                parsed = parse_thai_date(raw)
+                if parsed:
+                    return raw, parsed
+            search_start = idx + len(kw)
+    return "", ""
+
+
+def fix_dates_in_result(result: dict, raw_text: str) -> dict:
+    """
+    Re-parse issue/expiry date fields from the raw OCR text if the LLM
+    returned garbled dates.
     """
     date_fields = {
-        "date_of_birth": ["เกิดวันที่", "วันเกิด", "birth", "Date of Birth"],
         "date_of_issue": ["วันออกบัตร", "Date of Issue"],
         "date_of_expiry": ["วันบัตรหมดอายุ", "วันหมดอายุ", "Date of Expiry"],
     }
@@ -226,22 +345,67 @@ def fix_dates_in_result(result: dict, raw_lines: list[str]) -> dict:
         if val and re.fullmatch(r"\d{2}/\d{2}/\d{4}", str(val)):
             continue
 
-        # Search nearby lines for the keyword and try to parse a date
-        found = ""
-        for i, line in enumerate(raw_lines):
-            if any(kw.lower() in line.lower() for kw in keywords):
-                # Try the keyword line itself and the next two lines
-                for candidate in raw_lines[i:i+3]:
-                    found = parse_thai_date(candidate)
-                    if found:
-                        break
-            if found:
-                break
-
+        found = find_date_near_keyword(raw_text, keywords)
         if found:
             result[field] = found
 
     return result
+
+
+_ADDRESS_PART_PATTERNS = {
+    "tambon": r"(?:ต\.|ตำบล|แขวง)\s*(\S+)",
+    "amphoe": r"(?:อ\.|อำเภอ|เขต)\s*(\S+)",
+    "province": r"(?:จ\.|จังหวัด)\s*(\S+)",
+}
+
+
+def extract_address_parts(address: str) -> dict:
+    """
+    Split tambon/amphoe/province back out of the full address string.
+    Markers on the card are abbreviated with no space before the value
+    (e.g. "ต.หนองแก อ.หัวหิน จ.ประจวบคีรีขันธ์"), so each part is captured
+    as the next non-whitespace token after its marker (ต./ตำบล/แขวง for
+    tambon, อ./อำเภอ/เขต for amphoe, จ./จังหวัด for province). Bangkok
+    addresses often skip the จ. marker and just print "กรุงเทพมหานคร"
+    directly, so that's handled as a fallback for province.
+    """
+    parts_result = {"tambon": None, "amphoe": None, "province": None}
+    if not address:
+        return parts_result
+
+    for key, pattern in _ADDRESS_PART_PATTERNS.items():
+        m = re.search(pattern, address)
+        if m:
+            parts_result[key] = m.group(1).strip()
+
+    if not parts_result["province"] and "กรุงเทพมหานคร" in address:
+        parts_result["province"] = "กรุงเทพมหานคร"
+
+    return parts_result
+
+
+def extract_birthdate_info(raw_text: str) -> dict:
+    """
+    Extract date of birth in both Thai and English form (as printed) plus a
+    unified DD/MM/YYYY value, and flag whether the two printed dates agree for sanity checking.
+    """
+    th_raw, th_parsed = find_date_raw_and_parsed(
+        raw_text, ["เกิดวันที่", "วันเกิด"], _TH_DATE_PATTERN
+    )
+    en_raw, en_parsed = find_date_raw_and_parsed(
+        raw_text, ["Date of Birth", "Birth"], _EN_DATE_PATTERN
+    )
+
+    match = None
+    if th_parsed and en_parsed:
+        match = th_parsed == en_parsed
+
+    return {
+        "date_of_birth_th": th_raw or None,
+        "date_of_birth_en": en_raw or None,
+        "date_of_birth": th_parsed or en_parsed or None,
+        "date_of_birth_match": match,
+    }
 
 
 def fix_id_number_in_result(result: dict, raw_lines: list[str]) -> dict:
@@ -254,33 +418,6 @@ def fix_id_number_in_result(result: dict, raw_lines: list[str]) -> dict:
     extracted = extract_id_number(raw_lines)
     if extracted:
         result["id_number"] = extracted
-
-    return result
-
-
-def post_process(result: dict, raw_text: str) -> dict:
-    """
-    Apply all post-processing fixes to the LLM-structured result:
-    1. Re-extract 13-digit ID
-    2. Re-parse any garbled dates using Thai/English month maps
-    3. Strip whitespace from all string values
-    """
-    raw_lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
-
-    result = fix_id_number_in_result(result, raw_lines)
-    result = fix_dates_in_result(result, raw_lines)
-
-    # ── NEW: fix name_en ──
-    if result.get("name_en"):
-        result["name_en"] = fix_name_en(result["name_en"])
-
-    # ── NEW: fix name_th ──
-    if result.get("name_th"):
-        result["name_th"] = fix_name_th(result["name_th"])
-
-    for k, v in result.items():
-        if isinstance(v, str):
-            result[k] = v.strip()
 
     return result
 
@@ -329,144 +466,103 @@ def extract_raw_text(image_path: str) -> tuple[str, tuple]:
     return raw, size
 
 
-# Step 2: Send raw text (no image) to the model and parse into a JSON dict
-def _try_structure_to_json(raw_text: str) -> tuple[dict | None, str]:
-    """Single attempt: ask the model to structure raw_text, return (parsed_dict_or_None, raw_response)."""
-    prompt = STRUCTURE_PROMPT.format(raw_text=raw_text)
-    response = call_ollama(
-        messages=[{"role": "user", "content": prompt}],
-        options=OPTIONS_STRUCTURE,
-    )
-
-    # Strip markdown fences if any
-    clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", response, flags=re.DOTALL).strip()
-
-    # Unwrap quotes if exists, then try to parse as JSON
-    if clean.startswith('"') and clean.endswith('"'):
-        try:
-            clean = json.loads(clean)
-        except json.JSONDecodeError:
-            pass
-
-    try:
-        return json.loads(clean), response
-    except json.JSONDecodeError:
-        pass
-
-    # Fallback: extract the substring between the first '{' and the last '}'
-    # in case the model added stray text/labels before or after the JSON object
-    start, end = clean.find("{"), clean.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(clean[start:end + 1]), response
-        except json.JSONDecodeError:
-            pass
-
-    return None, response
-
-
-def build_fallback_result(raw_text: str) -> dict:
+# Step 2: Extract structured fields from the raw OCR text using deterministic rules
+def extract_fields_rule_based(raw_text: str) -> dict:
     """
-    Build a result dict using only deterministic regex extraction from raw OCR
-    text, for use when the structuring LLM call fails entirely (e.g. it ignores
-    the JSON instruction and returns unrelated text).
+    Build the structured result dict using only deterministic regex/rule-based
+    extraction from the raw OCR text. No LLM call involved here, since the
+    structuring LLM call was found to hallucinate/garble fields, especially
+    dates and names.
     """
     raw_lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
 
     result = {
         "id_number": None,
-        "name_th": None,
-        "name_en": None,
+        "prefix_th": None,
+        "first_name_th": None,
+        "last_name_th": None,
+        "prefix_en": None,
+        "first_name_en": None,
+        "last_name_en": None,
+        "date_of_birth_th": None,
+        "date_of_birth_en": None,
         "date_of_birth": None,
+        "date_of_birth_match": None,
         "religion": None,
-        "address_th": None,
+        "address": None,
+        "tambon": None,
+        "amphoe": None,
+        "province": None,
         "date_of_issue": None,
         "date_of_expiry": None,
     }
 
-    # ID number
+    # ID number 
     result["id_number"] = extract_id_number(raw_lines) or None
 
-    # Thai name line (the honorific often follows a label like "ชื่อตัวและชื่อสกุล")
-    for line in raw_lines:
+    # Thai name: anchor on the printed label "ชื่อตัวและชื่อสกุล" and read only the text up to the next label
+    name_th_raw = extract_after_keyword(
+        raw_text, "ชื่อตัวและชื่อสกุล", stop_keywords=("Name",), max_len=60
+    )
+    if not name_th_raw:
+        # Fallback: locate the first Thai honorific directly and window from there
         for prefix in sorted(_TH_NAME_PREFIXES, key=len, reverse=True):
-            idx = line.find(prefix)
+            idx = raw_text.find(prefix)
             if idx != -1:
-                result["name_th"] = line[idx:].strip()
+                name_th_raw = window_from(raw_text, idx, stop_keywords=("Name",), max_len=60)
                 break
-        if result["name_th"]:
-            break
+    result.update(split_th_name(name_th_raw))
 
-    # English name (look for a "Name" line and an optional following "Last name" line)
-    for i, line in enumerate(raw_lines):
-        if re.match(r"^Name\b", line, re.IGNORECASE):
-            parts = [line]
-            if i + 1 < len(raw_lines) and "last name" in raw_lines[i + 1].lower():
-                parts.append(raw_lines[i + 1])
-            combined = re.sub(r"^Name\b", "", " ".join(parts), flags=re.IGNORECASE).strip()
-            result["name_en"] = combined or None
-            break
+    # English name: anchor on the printed label "Name" and read only the text up to the next label
+    name_en_raw = extract_after_keyword(
+        raw_text, "Name", stop_keywords=("เกิดวันที่", "Date of Birth"), max_len=60
+    )
+    result.update(split_en_name(name_en_raw))
 
-    # Religion
-    for line in raw_lines:
-        if "ศาสนา" in line:
-            val = line.replace("ศาสนา", "").strip()
-            if val:
-                result["religion"] = val
-            break
+    # Religion: anchor on the printed label "ศาสนา" and read only the text up to the next label
+    result["religion"] = extract_after_keyword(
+        raw_text, "ศาสนา", stop_keywords=("ที่อยู่",), max_len=30
+    )
 
-    # Address
-    for line in raw_lines:
-        if "ที่อยู่" in line or re.search(r"หมู่ที่|ต\.|อ\.|จ\.", line):
-            result["address_th"] = line
-            break
+    # Address: anchor on the printed label "ที่อยู่" and read only the text up to the next label
+    result["address"] = extract_after_keyword(
+        raw_text, "ที่อยู่", stop_keywords=("วันออกบัตร", "Date of Issue"), max_len=200
+    )
 
-    # Dates, reusing the same keyword-based search as fix_dates_in_result
-    result = fix_dates_in_result(result, raw_lines)
+    # Split tambon/amphoe/province back out of the full address string above
+    result.update(extract_address_parts(result["address"]))
 
-    if result.get("name_th"):
-        result["name_th"] = fix_name_th(result["name_th"])
-    if result.get("name_en"):
-        result["name_en"] = fix_name_en(result["name_en"])
+    # Date of birth: anchor on the printed label "เกิดวันที่" and read only the text up to the next label
+    result.update(extract_birthdate_info(raw_text))
 
-    result["_fallback_extraction"] = True
+    # Issue / expiry dates (Thai only on the card)
+    result = fix_dates_in_result(result, raw_text)
+
+    # Strip whitespace from all string values
+    for k, v in result.items():
+        if isinstance(v, str):
+            result[k] = v.strip()
+
     return result
 
 
-# Step 2: Send raw text (no image) to the model and parse into a JSON dict.
-# Retries once on failure, then falls back to deterministic regex extraction.
-def structure_to_json(raw_text: str) -> dict:
-    last_response = ""
-    for attempt in range(2):
-        parsed, last_response = _try_structure_to_json(raw_text)
-        if parsed is not None:
-            return parsed
-
-    # Both LLM attempts failed to produce valid JSON — fall back to regex extraction
-    fallback = build_fallback_result(raw_text)
-    fallback["_structured_response"] = last_response
-    return fallback
-
-
-# Run both steps, then apply post-processing fixes
+# Run the OCR step, then extract structured fields with pure rule-based logic
 def ocr_image(image_path: str) -> tuple[dict, str]:
     try:
         raw_text, (w, h) = extract_raw_text(image_path)
         print(f"({w}x{h}) raw✓", end=" ", flush=True)
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
-        return {"_error": f"Step 1 failed: {body}"}, ""
+        return {"_error": f"OCR step failed: {body}", "raw_ocr_text": ""}, ""
 
     try:
-        result = structure_to_json(raw_text)
-        print("json✓", end=" ", flush=True)
+        result = extract_fields_rule_based(raw_text)
+        print("fields✓", end=" ", flush=True)
     except Exception as e:
-        return {"_error": f"Step 2 failed: {e}", "_raw": raw_text}, raw_text
+        return {"_error": f"Field extraction failed: {e}", "raw_ocr_text": raw_text}, raw_text
 
-    # Step 3: deterministic post-processing on top of LLM output
-    if "_parse_error" not in result and "_error" not in result:
-        result = post_process(result, raw_text)
-        print("fix✓", end=" ", flush=True)
+    # Always include the raw OCR text alongside the structured fields
+    result["raw_ocr_text"] = raw_text
 
     return result, raw_text
 
@@ -495,8 +591,9 @@ def main():
         fields, _ = ocr_image(str(img_path))
         all_results[img_path.name] = fields
 
-        preview = json.dumps(fields, ensure_ascii=False)[:100]
-        print(f"→  {preview}{'...' if len(str(fields)) > 100 else ''}")
+        preview_full = json.dumps(fields, ensure_ascii=False)
+        preview = preview_full[:100]
+        print(f"→  {preview}{'...' if len(preview_full) > 100 else ''}")
 
     # Write results to output file
     with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
