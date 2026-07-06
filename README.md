@@ -139,3 +139,83 @@ A field appears only if something went wrong:
 | `_error` | Present if Step 1 or Step 2 failed outright (e.g. network/API error, or an exception during extraction); other fields on the record may be missing or unreliable in this case. |
 
 All results across the processed images are collected into a single `ocr_results.json`, keyed by filename.
+
+# n8n Integration (Optional)
+
+An example n8n workflow (`ID-OCR.json`) is included to automate the OCR pipeline.
+
+## 1. Install n8n
+
+If you don't already have n8n installed:
+
+```bash
+npm install -g n8n
+```
+
+or run it directly with:
+
+```bash
+npx n8n
+```
+
+## 2. Import the Workflow
+
+1. Open the n8n editor.
+2. Select **Import from File**.
+3. Import the provided `ID-OCR.json` workflow.
+
+## 3. ID-OCR Setup Guide
+
+### Folder Structure
+
+Create the following folder structure in the **same directory as your `.n8n` folder** (typically `C:\Users\<your_username>\` on Windows):
+
+```text
+C:\
+└── Users\
+    └── <your_username>\
+        ├── .n8n\
+        └── .n8n-files\
+            └── ids\
+                └── YYYY-MM-DD\   ← Only today's dated folder is processed
+```
+
+The workflow looks for a folder named with today's date (`YYYY-MM-DD`). Create a new dated folder each day and place the ID card images to be processed inside it.
+
+### Configure Ollama Credentials
+
+Open the **HTTP Request** node in the workflow and configure its **Ollama** credential to point to your local Ollama instance.
+
+Set the **Base URL** to:
+
+```text
+http://127.0.0.1:11434
+```
+
+---
+
+## 4. Start n8n
+
+Open **PowerShell** and run:
+
+```powershell
+$env:NODE_FUNCTION_ALLOW_BUILTIN="fs,path"
+npx n8n
+```
+
+The `NODE_FUNCTION_ALLOW_BUILTIN` environment variable allows the workflow's Code nodes to access the required Node.js built-in modules (`fs` and `path`).
+
+---
+
+## Processing Logic
+
+When the workflow is executed, it will:
+
+1. Scan the `.n8n-files/ids/` directory.
+2. Find the subfolder whose name matches today's date (`YYYY-MM-DD`).
+3. Process only the image files inside that folder whose filenames **do not** contain the word `processed`.
+4. Run each image through the OCR pipeline.
+5. Save the extracted structured data.
+6. Rename or mark processed files so they are not processed again on subsequent runs.
+
+This allows new ID card images to be added each day without reprocessing previously handled files.
