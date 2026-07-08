@@ -1,2 +1,7 @@
 /ids/*
+/gray/*
 ocr_results.json
+*.pyc
+/test/*
+test-pipe-pre.json
+test-pre.json

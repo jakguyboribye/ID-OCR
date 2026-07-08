@@ -12,8 +12,8 @@ except ImportError:
     raise SystemExit("Pillow is required: pip install pillow")
 
 # ── Config ────────────────────────────────────────────────────────────────────
-IMAGE_DIR   = "ids"
-OUTPUT_FILE = "ocr_results.json"
+IMAGE_DIR   = "test"
+OUTPUT_FILE = "test-pre.json"
 MODEL       = "scb10x/typhoon-ocr1.5-3b:latest"
 OLLAMA_URL  = "http://localhost:11434/api/chat"
 EXTENSIONS  = {".jpg", ".jpeg", ".png"}
@@ -81,29 +81,67 @@ _OCR_MONTH_FIXES = {
 _TH_NAME_PREFIXES = (
     "นาย", "นาง", "นางสาว",
     "น.ส.", "น.ส", "นส.", "นส",
-    "ด.ช.", "ด.ช", "ด.ญ.", "ด.ญ",
+    "ด.ช.", "ด.ช", "ด.ญ.", "ด.ญ","พระ","จ.ส.อ.",
+    "พ.ต.ท.","ร.ต.ท.","ว่าที่ ร.ต.","ว่าที่ ร.ต.หญิง","ส.อ.","หม่อมหลวง"
 )
 _TH_NAME_PREFIXES_NORMALIZED = {
     "นาย": "นาย", "นาง": "นาง", "นางสาว": "นางสาว",
     "น.ส.": "น.ส.", "น.ส": "น.ส.", "นส.": "น.ส.", "นส": "น.ส.",
     "ด.ช.": "ด.ช.", "ด.ช": "ด.ช.", "ด.ญ.": "ด.ญ.", "ด.ญ": "ด.ญ.",
+    "พระ":"พระ","พ.ต.ท.":"พ.ต.ท.","ร.ต.ท.":"ร.ต.ท.",
+    "ว่าที่ ร.ต.":"ว่าที่ ร.ต.","ว่าที่ ร.ต.หญิง":"ว่าที่ ร.ต.หญิง","ว่าที่ร.ต.":"ว่าที่ ร.ต.","ว่าที่ร.ต.หญิง":"ว่าที่ ร.ต.หญิง",
+    "ส.อ.":"ส.อ.","หม่อมหลวง":"หม่อมหลวง","จ.ส.อ.":"จ.ส.อ.","จสอ":"จ.ส.อ."
 }
 
-_EN_NAME_PREFIXES = ("Mr.", "Mrs.", "Miss", "Ms.", "Dr.")
+_EN_NAME_PREFIXES = {
+    "Mr.": "Mr.",
+    "Mrs.": "Mrs.",
+    "Miss": "Miss",
+    "Ms.": "Ms.",
+    "Dr.": "Dr.",
+    "Sm 1": "Sm 1",
+    "Acting SubLT":"Acting SubLT",
+}
+
+_EN_NAME_PREFIXES_NORMALIZED = {
+    "Mr.": "Mr.",
+    "Mrs.": "Mrs.",
+    "Miss": "Miss",
+    "Ms.": "Ms.",
+    "Dr.": "Dr.",
+    "Sm 1": "Sm 1",
+    "Smt 1": "Smt 1",
+    "Acting Sub.LT": "Acting Sub Lt.",   # ปรับรูปแบบ normalized ตามที่ต้องการจริง
+    "Acting Sub Lt.": "Acting Sub Lt.",
+}
+
+# เรียงจากยาว -> สั้น ครั้งเดียว ใช้ร่วมกันทั้งสองฟังก์ชัน
+_SORTED_PREFIXES = sorted(_EN_NAME_PREFIXES_NORMALIZED, key=len, reverse=True)
+
+# สร้าง regex pattern จากรายการเดียวกัน (escape ทุกตัวกันอักขระพิเศษ เช่น '.')
+_PREFIX_PATTERN = "|".join(re.escape(p) for p in _SORTED_PREFIXES)
+_PREFIX_RE = re.compile(rf"^({_PREFIX_PATTERN})(?=[.\s]|$)", flags=re.IGNORECASE)
+
 
 # ── Post-processing helpers ───────────────────────────────────────────────────
 
 def fix_name_en(name: str) -> str:
-    """Remove literal 'Last name' label and ensure space after title prefix.
-    e.g. "Mr.Julian" -> "Mr. Julian", "Last name Casablancas" -> "Casablancas" """
     if not name:
         return name
-    # Remove literal OCR label artifacts
-    name = re.sub(r"\bLast\s*name\b", "", name, flags=re.IGNORECASE).strip()
-    # Ensure space after common English title prefixes (Mr., Mrs., Miss, Ms., Dr.)
-    name = re.sub(r"\b(Mr\.|Mrs\.|Miss|Ms\.|Dr\.)(?=\S)", r"\1 ", name)
-    # Collapse multiple spaces
-    name = re.sub(r" {2,}", " ", name).strip()
+
+    name = name.strip()
+
+    m = _PREFIX_RE.match(name)
+    if m:
+        matched = m.group(1)
+        normalized = _EN_NAME_PREFIXES_NORMALIZED[
+            next(p for p in _SORTED_PREFIXES if p.lower() == matched.lower())
+        ]
+        rest = name[m.end():].lstrip(". ")
+        name = f"{normalized} {rest}".strip() if rest else normalized
+
+    name = re.sub(r"\bLast\s*name\b", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\s{2,}", " ", name).strip()
     return name
 
 def fix_name_th(name: str) -> str:
@@ -152,25 +190,34 @@ def split_th_name(name: str) -> dict:
 
 
 def split_en_name(name: str) -> dict:
-    """
-    Split an English full name (optionally including a title/prefix) into its
-    prefix, first name, and last name components.
-    e.g. "Mr. Serj Tankian" -> {"prefix_en": "Mr.", "first_name_en": "Serj", "last_name_en": "Tankian"}
-    """
-    parts_result = {"prefix_en": None, "first_name_en": None, "last_name_en": None}
+    parts_result = {
+        "prefix_en": None,
+        "first_name_en": None,
+        "last_name_en": None,
+    }
+
     if not name:
         return parts_result
 
     name = fix_name_en(name)
     rest = name
-    match = re.match(r"^(Mr\.|Mrs\.|Miss|Ms\.|Dr\.)\s+(.*)$", name, flags=re.IGNORECASE)
+
+    # ใช้ prefix pattern ชุดเดียวกับ fix_name_en แทน hardcode ซ้ำ
+    normalized_prefixes = sorted(
+        set(_EN_NAME_PREFIXES_NORMALIZED.values()), key=len, reverse=True
+    )
+    prefix_pattern = "|".join(re.escape(p) for p in normalized_prefixes)
+    match = re.match(rf"^({prefix_pattern})\s+(.*)$", name, flags=re.IGNORECASE)
+
     if match:
         parts_result["prefix_en"] = match.group(1)
         rest = match.group(2).strip()
 
     tokens = rest.split()
+
     if tokens:
         parts_result["first_name_en"] = tokens[0].strip() or None
+
     if len(tokens) > 1:
         parts_result["last_name_en"] = " ".join(tokens[1:]).strip() or None
 
@@ -567,7 +614,42 @@ def ocr_image(image_path: str) -> tuple[dict, str]:
     return result, raw_text
 
 
-def main():
+# ── Persistence helpers ─────────────────────────────────────────────────────
+
+def save_results(all_results: dict, output_file: str = OUTPUT_FILE) -> None:
+    """
+    Write results to a temp file, then atomically rename it over the real
+    output file. This means a crash/kill/power-loss mid-write can never
+    leave OUTPUT_FILE half-written or corrupted -- the rename either fully
+    happens or doesn't happen at all.
+    """
+    tmp_path = f"{output_file}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as out:
+        json.dump(all_results, out, ensure_ascii=False, indent=2)
+    Path(tmp_path).replace(output_file)
+
+
+def load_existing_results(output_file: str = OUTPUT_FILE) -> dict:
+    """Load whatever was saved from a previous (possibly interrupted) run."""
+    path = Path(output_file)
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # Corrupt/partial file from an old run -- start fresh rather than crash
+        return {}
+
+
+def main(resume: bool = True, save_every: int = 1):
+    """
+    resume:     if True, skip images that already have a successful
+                (non-error) result saved in OUTPUT_FILE from a previous run.
+    save_every: write OUTPUT_FILE to disk after this many newly processed
+                images. 1 = save after every single image (safest, default).
+                Raise this if you want fewer disk writes on a huge batch.
+    """
 
     # Ensure dirs
     image_dir = Path(IMAGE_DIR)
@@ -580,24 +662,50 @@ def main():
         print(f"No images found in '{IMAGE_DIR}'.")
         return
 
+    all_results = load_existing_results() if resume else {}
+    if all_results:
+        done = {k for k, v in all_results.items() if isinstance(v, dict) and "_error" not in v}
+        print(f"Resuming: {len(done)} image(s) already have results in '{OUTPUT_FILE}'.")
+
     print(f"Found {len(images)} image(s). Running OCR with {MODEL}...\n")
 
-    all_results = {}
+    processed_since_save = 0
 
-    # Process each image
-    for i, img_path in enumerate(images, 1):
-        print(f"  [{i}/{len(images)}] {img_path.name} ... ", end="", flush=True)
+    try:
+        for i, img_path in enumerate(images, 1):
+            name = img_path.name
 
-        fields, _ = ocr_image(str(img_path))
-        all_results[img_path.name] = fields
+            if resume and name in all_results and isinstance(all_results[name], dict) \
+                    and "_error" not in all_results[name]:
+                print(f"  [{i}/{len(images)}] {name} ... skipped (already done)")
+                continue
 
-        preview_full = json.dumps(fields, ensure_ascii=False)
-        preview = preview_full[:100]
-        print(f"→  {preview}{'...' if len(preview_full) > 100 else ''}")
+            print(f"  [{i}/{len(images)}] {name} ... ", end="", flush=True)
 
-    # Write results to output file
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        json.dump(all_results, out, ensure_ascii=False, indent=2)
+            try:
+                fields, _ = ocr_image(str(img_path))
+            except Exception as e:
+                # Never let one bad image kill the whole batch -- record the
+                # error and keep going so the rest of the images still get processed.
+                fields = {"_error": f"Unhandled error: {e}", "raw_ocr_text": ""}
+
+            all_results[name] = fields
+            processed_since_save += 1
+
+            preview_full = json.dumps(fields, ensure_ascii=False)
+            preview = preview_full[:100]
+            print(f"→  {preview}{'...' if len(preview_full) > 100 else ''}")
+
+            if processed_since_save >= save_every:
+                save_results(all_results)
+                processed_since_save = 0
+
+    except KeyboardInterrupt:
+        print("\nInterrupted by user (Ctrl+C) -- saving progress so far...")
+    finally:
+        # Always flush whatever we have -- whether the run finished normally,
+        # was interrupted, or hit an unexpected error.
+        save_results(all_results)
 
     print(f"\nDone. Results saved to '{OUTPUT_FILE}'.")
 
