@@ -614,7 +614,42 @@ def ocr_image(image_path: str) -> tuple[dict, str]:
     return result, raw_text
 
 
-def main():
+# ── Persistence helpers ─────────────────────────────────────────────────────
+
+def save_results(all_results: dict, output_file: str = OUTPUT_FILE) -> None:
+    """
+    Write results to a temp file, then atomically rename it over the real
+    output file. This means a crash/kill/power-loss mid-write can never
+    leave OUTPUT_FILE half-written or corrupted -- the rename either fully
+    happens or doesn't happen at all.
+    """
+    tmp_path = f"{output_file}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as out:
+        json.dump(all_results, out, ensure_ascii=False, indent=2)
+    Path(tmp_path).replace(output_file)
+
+
+def load_existing_results(output_file: str = OUTPUT_FILE) -> dict:
+    """Load whatever was saved from a previous (possibly interrupted) run."""
+    path = Path(output_file)
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # Corrupt/partial file from an old run -- start fresh rather than crash
+        return {}
+
+
+def main(resume: bool = True, save_every: int = 1):
+    """
+    resume:     if True, skip images that already have a successful
+                (non-error) result saved in OUTPUT_FILE from a previous run.
+    save_every: write OUTPUT_FILE to disk after this many newly processed
+                images. 1 = save after every single image (safest, default).
+                Raise this if you want fewer disk writes on a huge batch.
+    """
 
     # Ensure dirs
     image_dir = Path(IMAGE_DIR)
@@ -627,24 +662,50 @@ def main():
         print(f"No images found in '{IMAGE_DIR}'.")
         return
 
+    all_results = load_existing_results() if resume else {}
+    if all_results:
+        done = {k for k, v in all_results.items() if isinstance(v, dict) and "_error" not in v}
+        print(f"Resuming: {len(done)} image(s) already have results in '{OUTPUT_FILE}'.")
+
     print(f"Found {len(images)} image(s). Running OCR with {MODEL}...\n")
 
-    all_results = {}
+    processed_since_save = 0
 
-    # Process each image
-    for i, img_path in enumerate(images, 1):
-        print(f"  [{i}/{len(images)}] {img_path.name} ... ", end="", flush=True)
+    try:
+        for i, img_path in enumerate(images, 1):
+            name = img_path.name
 
-        fields, _ = ocr_image(str(img_path))
-        all_results[img_path.name] = fields
+            if resume and name in all_results and isinstance(all_results[name], dict) \
+                    and "_error" not in all_results[name]:
+                print(f"  [{i}/{len(images)}] {name} ... skipped (already done)")
+                continue
 
-        preview_full = json.dumps(fields, ensure_ascii=False)
-        preview = preview_full[:100]
-        print(f"→  {preview}{'...' if len(preview_full) > 100 else ''}")
+            print(f"  [{i}/{len(images)}] {name} ... ", end="", flush=True)
 
-    # Write results to output file
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        json.dump(all_results, out, ensure_ascii=False, indent=2)
+            try:
+                fields, _ = ocr_image(str(img_path))
+            except Exception as e:
+                # Never let one bad image kill the whole batch -- record the
+                # error and keep going so the rest of the images still get processed.
+                fields = {"_error": f"Unhandled error: {e}", "raw_ocr_text": ""}
+
+            all_results[name] = fields
+            processed_since_save += 1
+
+            preview_full = json.dumps(fields, ensure_ascii=False)
+            preview = preview_full[:100]
+            print(f"→  {preview}{'...' if len(preview_full) > 100 else ''}")
+
+            if processed_since_save >= save_every:
+                save_results(all_results)
+                processed_since_save = 0
+
+    except KeyboardInterrupt:
+        print("\nInterrupted by user (Ctrl+C) -- saving progress so far...")
+    finally:
+        # Always flush whatever we have -- whether the run finished normally,
+        # was interrupted, or hit an unexpected error.
+        save_results(all_results)
 
     print(f"\nDone. Results saved to '{OUTPUT_FILE}'.")
 
