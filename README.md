@@ -8,7 +8,7 @@
 pip install -r requirements.txt
 ```
 
-(Everything else the script uses — `base64`, `io`, `json`, `re`, `urllib`, `pathlib` — is in the Python standard library.)
+This needs `Pillow` and `opencv-python` (for the preprocessing step). Everything else the scripts use — `base64`, `io`, `json`, `re`, `urllib`, `pathlib` — is in the Python standard library.
 
 ## 2. Install Ollama
 
@@ -57,37 +57,52 @@ ollama run scb10x/typhoon-ocr1.5-3b:latest
 
 ## 5. Add your images
 
-Put the ID card photos into the `ids/` folder next to the script (create it if it doesn't exist):
+Put the ID card photos into the `ids/` folder next to the scripts (create it if it doesn't exist):
 
 ```bash
 mkdir -p ids
 # copy .jpg / .jpeg / .png files into ids/
 ```
 
-## 6. Run the pipeline
+## 6. Run it
+
+There are two ways to run this, depending on whether your source photos need preprocessing first.
+
+**Option A — OCR only, no preprocessing**
 
 ```bash
 python typhoon_test.py
 ```
 
-Results are written to `ocr_results.json` in the same directory.
+Reads images directly from `test/`, OCRs them, and writes `test-pre.json`.
 
-## Notes / troubleshooting
+**Option B — full pipeline (grayscale + sharpen, then OCR)**
 
-- The script calls the Ollama HTTP API at `http://localhost:11434/api/chat`. If you changed Ollama's host/port, update `OLLAMA_URL` in the script.
-- If you have limited VRAM, the default `MAX_LONG_EDGE = 1024` keeps images small; lower it further (e.g. `768`) if you hit out-of-memory errors, or raise it if you have headroom and want potentially better OCR accuracy on small text.
-- First request to a freshly pulled model can be slow while Ollama loads it into memory — this is normal, later requests are faster.
-- If `ocr_image()` reports an `_error` for every file, check that `ollama serve` is running and that `ollama list` shows the model.
-  
+```bash
+python pipeline.py
+```
+
+This is the recommended path for real ID card photos. It:
+1. Reads images from `ids/`
+2. Converts each to grayscale and sharpens it (via `enhance_gray_sharp` in `step_2.py`), saving the result into `gray/`
+3. Runs OCR on the images in `gray/`
+4. Writes results to `test-pipe-pre.json`
+
+Both scripts save results incrementally (see **Crash resilience & resuming** below) rather than only at the end.
+
 ## Overview
 
-This script extracts structured data (name, ID number, dates, address, etc.) from photos of Thai National ID cards using a local vision-language model served by Ollama. It works in two stages: raw OCR, then deterministic, regex-based field extraction. There is no second LLM call to "structure" the data — an earlier version tried that and found the model would hallucinate or garble fields, especially dates and names, so extraction is now pure rule-based on top of the raw OCR text.
+This pipeline extracts structured data (name, ID number, dates, address, etc.) from photos of Thai National ID cards using a local vision-language model served by Ollama. It works in up to three stages: optional image preprocessing, raw OCR, then deterministic, regex-based field extraction. There is no second LLM call to "structure" the data — an earlier version tried that and found the model would hallucinate or garble fields, especially dates and names, so extraction is now pure rule-based on top of the raw OCR text.
 
 ## Pipeline
 
+### Step 0 — Preprocessing (pipeline.py only)
+
+Each source image in `ids/` is converted to grayscale and sharpened via `enhance_gray_sharp` (in `step_2.py`), then saved into `gray/` with `_crop` stripped from the filename and `_gray_sharp` appended. This is the folder the OCR step actually reads from when using `pipeline.py`.
+
 ### Step 1 — Raw OCR (image → text)
 
-Each image is resized (long edge capped at 1024px) and sent to the vision model with a simple instruction: read every visible line of text, Thai and English, and output it raw — no formatting, no JSON. This keeps the model's job in this step narrow and reliable: just transcription, not interpretation.
+Each image is resized (long edge capped at 1024px) and sent to the vision model with a simple instruction: read every visible line of text, Thai and English, and output it raw — no formatting, no JSON. This keeps the model's job in this step narrow and reliable: just transcription, not interpretation. If the model returns garbled/degenerate output (see **Crash resilience & resuming**), this step retries automatically before giving up.
 
 ### Step 2 — Field extraction (text → JSON, rule-based)
 
@@ -103,8 +118,10 @@ The raw OCR text is parsed directly with deterministic regex and keyword-anchore
 
 ### Error handling
 
-- If Step 1 (the OCR call to Ollama) fails, e.g. a network or API error, the record gets an `_error` field describing the failure and an empty `raw_ocr_text`.
+- If Step 1 (the OCR call to Ollama) fails outright, e.g. a network or API error, the record gets an `_error` field describing the failure and an empty `raw_ocr_text`.
+- If Step 1 returns garbled/degenerate output and retries don't fix it, the record gets an `_error` field noting this, with the (garbled) `raw_ocr_text` preserved for inspection.
 - If Step 2 (field extraction) throws an unexpected exception, the record gets an `_error` field, but `raw_ocr_text` is preserved so the raw transcription can still be inspected.
+- Any other unhandled exception while processing a given image (e.g. from `pipeline.py`'s preprocessing step) is also caught per-image and recorded as `_error`, rather than stopping the whole batch.
 
 ## Output Fields
 
@@ -136,9 +153,9 @@ A field appears only if something went wrong:
 
 | Field | Description |
 |---|---|
-| `_error` | Present if Step 1 or Step 2 failed outright (e.g. network/API error, or an exception during extraction); other fields on the record may be missing or unreliable in this case. |
+| `_error` | Present if a step failed outright (e.g. network/API error, garbled OCR output after retries, or an exception during preprocessing or extraction); other fields on the record may be missing or unreliable in this case. |
 
-All results across the processed images are collected into a single `ocr_results.json`, keyed by filename.
+All results across the processed images are collected into a single output JSON, keyed by filename — `test-pre.json` for `typhoon_test.py`, or `test-pipe-pre.json` for `pipeline.py`.
 
 # n8n Integration (Optional)
 
