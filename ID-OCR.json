@@ -12,7 +12,7 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        -656,
+        -752,
         -352
       ],
       "id": "edfbd674-30d7-4859-9b7e-be8fdd71305e",
@@ -32,8 +32,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        928,
-        -480
+        1168,
+        -496
       ],
       "id": "f3e3f202-5939-4af5-95ba-dc6d350375b3",
       "name": "HTTP Request",
@@ -53,52 +53,24 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        768,
-        -480
+        1008,
+        -496
       ],
       "id": "0f128ded-9a51-4c07-9f3d-6c48b9d0f3e9",
       "name": "BASE64"
     },
     {
       "parameters": {
-        "jsCode": "// ── Month mappings ──────────────────────────────────────────────\nconst TH_MONTHS = {\n  \"มกราคม\": \"01\", \"ม.ค.\": \"01\", \"ม.ค\": \"01\",\n  \"กุมภาพันธ์\": \"02\", \"ก.พ.\": \"02\", \"ก.พ\": \"02\",\n  \"มีนาคม\": \"03\", \"มี.ค.\": \"03\", \"มี.ค\": \"03\",\n  \"เมษายน\": \"04\", \"เม.ย.\": \"04\", \"เม.ย\": \"04\",\n  \"พฤษภาคม\": \"05\", \"พ.ค.\": \"05\", \"พ.ค\": \"05\",\n  \"มิถุนายน\": \"06\", \"มิ.ย.\": \"06\", \"มิ.ย\": \"06\",\n  \"กรกฎาคม\": \"07\", \"ก.ค.\": \"07\", \"ก.ค\": \"07\",\n  \"สิงหาคม\": \"08\", \"ส.ค.\": \"08\", \"ส.ค\": \"08\",\n  \"กันยายน\": \"09\", \"ก.ย.\": \"09\", \"ก.ย\": \"09\",\n  \"ตุลาคม\": \"10\", \"ต.ค.\": \"10\", \"ต.ค\": \"10\",\n  \"พฤศจิกายน\": \"11\", \"พ.ย.\": \"11\", \"พ.ย\": \"11\",\n  \"ธันวาคม\": \"12\", \"ธ.ค.\": \"12\", \"ธ.ค\": \"12\",\n};\n\nconst EN_MONTHS = {\n  \"january\": \"01\", \"jan\": \"01\", \"jan.\": \"01\",\n  \"february\": \"02\", \"feb\": \"02\", \"feb.\": \"02\",\n  \"march\": \"03\", \"mar\": \"03\", \"mar.\": \"03\",\n  \"april\": \"04\", \"apr\": \"04\", \"apr.\": \"04\",\n  \"may\": \"05\",\n  \"june\": \"06\", \"jun\": \"06\", \"jun.\": \"06\",\n  \"july\": \"07\", \"jul\": \"07\", \"jul.\": \"07\",\n  \"august\": \"08\", \"aug\": \"08\", \"aug.\": \"08\",\n  \"september\": \"09\", \"sep\": \"09\", \"sep.\": \"09\",\n  \"october\": \"10\", \"oct\": \"10\", \"oct.\": \"10\",\n  \"november\": \"11\", \"nov\": \"11\", \"nov.\": \"11\",\n  \"december\": \"12\", \"dec\": \"12\", \"dec.\": \"12\",\n};\n\nconst OCR_MONTH_FIXES = {\n  \"พ.8.\": \"พ.ย.\", \"พ.8\": \"พ.ย\",\n  \"ม.1.\": \"ม.ค.\", \"ม.1\": \"ม.ค\",\n  \"ก.1.\": \"ก.ค.\", \"ก.1\": \"ก.ค\",\n  \"ก.8.\": \"ก.ย.\", \"ก.8\": \"ก.ย\",\n  \"ส.1.\": \"ส.ค.\", \"ส.1\": \"ส.ค\",\n  \"ต.1.\": \"ต.ค.\", \"ต.1\": \"ต.ค\",\n  \"ธ.1.\": \"ธ.ค.\", \"ธ.1\": \"ธ.ค\",\n  \"มิ.8.\": \"มิ.ย.\", \"มิ.8\": \"มิ.ย\",\n  \"มี.1.\": \"มี.ค.\", \"มี.1\": \"มี.ค\",\n  \"เม.8.\": \"เม.ย.\", \"เม.8\": \"เม.ย\",\n};\n\nconst TH_NAME_PREFIXES = [\n  \"นาย\", \"นาง\", \"นางสาว\",\n  \"น.ส.\", \"น.ส\", \"นส.\", \"นส\",\n  \"ด.ช.\", \"ด.ช\", \"ด.ญ.\", \"ด.ญ\",\n];\nconst TH_NAME_PREFIXES_NORMALIZED = {\n  \"นาย\": \"นาย\", \"นาง\": \"นาง\", \"นางสาว\": \"นางสาว\",\n  \"น.ส.\": \"น.ส.\", \"น.ส\": \"น.ส.\", \"นส.\": \"น.ส.\", \"นส\": \"น.ส.\",\n  \"ด.ช.\": \"ด.ช.\", \"ด.ช\": \"ด.ช.\", \"ด.ญ.\": \"ด.ญ.\", \"ด.ญ\": \"ด.ญ.\",\n};\n\n// ── Utilities ───────────────────────────────────────────────────\nfunction escapeRegExp(s) {\n  return s.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n}\n\nfunction sortedByLenDesc(arr) {\n  return [...arr].sort((a, b) => b.length - a.length);\n}\n\n// ── Name helpers ────────────────────────────────────────────────\nfunction fixNameEn(name) {\n  if (!name) return name;\n  name = name.replace(/\\bLast\\s*name\\b/gi, \"\").trim();\n  name = name.replace(/\\b(Mr\\.|Mrs\\.|Miss|Ms\\.|Dr\\.)(?=\\S)/g, \"$1 \");\n  name = name.replace(/ {2,}/g, \" \").trim();\n  return name;\n}\n\nfunction fixNameTh(name) {\n  if (!name) return name;\n  for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n    if (name.startsWith(prefix)) {\n      const normalized = TH_NAME_PREFIXES_NORMALIZED[prefix];\n      let rest = name.slice(prefix.length);\n      if (rest && !rest.startsWith(\" \")) {\n        name = normalized + \" \" + rest;\n      }\n      break;\n    }\n  }\n  return name.replace(/ {2,}/g, \" \").trim();\n}\n\nfunction splitThName(name) {\n  const result = { prefix_th: null, first_name_th: null, last_name_th: null };\n  if (!name) return result;\n\n  name = fixNameTh(name);\n  let rest = name;\n  for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n    const normalized = TH_NAME_PREFIXES_NORMALIZED[prefix];\n    if (name.startsWith(normalized)) {\n      result.prefix_th = normalized;\n      rest = name.slice(normalized.length).trim();\n      break;\n    }\n  }\n\n  const tokens = rest.split(/\\s+/).filter(Boolean);\n  if (tokens.length) result.first_name_th = tokens[0] || null;\n  if (tokens.length > 1) result.last_name_th = tokens.slice(1).join(\" \") || null;\n\n  return result;\n}\n\nfunction splitEnName(name) {\n  const result = { prefix_en: null, first_name_en: null, last_name_en: null };\n  if (!name) return result;\n\n  name = fixNameEn(name);\n  let rest = name;\n  const match = name.match(/^(Mr\\.|Mrs\\.|Miss|Ms\\.|Dr\\.)\\s+(.*)$/i);\n  if (match) {\n    result.prefix_en = match[1];\n    rest = match[2].trim();\n  }\n\n  const tokens = rest.split(/\\s+/).filter(Boolean);\n  if (tokens.length) result.first_name_en = tokens[0] || null;\n  if (tokens.length > 1) result.last_name_en = tokens.slice(1).join(\" \") || null;\n\n  return result;\n}\n\n// ── Date helpers ────────────────────────────────────────────────\nfunction fixOcrMonth(text) {\n  for (const [wrong, right] of Object.entries(OCR_MONTH_FIXES)) {\n    if (text.includes(wrong)) {\n      text = text.split(wrong).join(right);\n    }\n  }\n  return text;\n}\n\nconst TH_MONTH_ALT = sortedByLenDesc(Object.keys(TH_MONTHS)).map(escapeRegExp).join(\"|\");\nconst TH_DATE_RE = new RegExp(`(\\\\d{1,2})\\\\s*(${TH_MONTH_ALT})\\\\s*(\\\\d{2,4})`);\n\nconst EN_MONTH_ALT = sortedByLenDesc(Object.keys(EN_MONTHS)).map(escapeRegExp).join(\"|\");\nconst EN_DATE_RE = new RegExp(`(\\\\d{1,2})\\\\s*(${EN_MONTH_ALT})\\\\.?,?\\\\s*(\\\\d{2,4})`, \"i\");\n\nfunction parseThaiDate(text) {\n  text = fixOcrMonth(text.trim());\n\n  let m = TH_DATE_RE.exec(text);\n  if (m) {\n    const day = m[1].padStart(2, \"0\");\n    const mm = TH_MONTHS[m[2]];\n    let yearBe = parseInt(m[3], 10);\n    if (yearBe < 100) yearBe += 2500;\n    const yearCe = yearBe > 2400 ? yearBe - 543 : yearBe;\n    return `${day}/${mm}/${yearCe}`;\n  }\n\n  m = EN_DATE_RE.exec(text);\n  if (m) {\n    const day = m[1].padStart(2, \"0\");\n    const mm = EN_MONTHS[m[2].toLowerCase()];\n    let year = parseInt(m[3], 10);\n    if (year < 100) year += year > 50 ? 1900 : 2000;\n    return `${day}/${mm}/${year}`;\n  }\n\n  return \"\";\n}\n\n// ── Window / keyword extraction ────────────────────────────────\nfunction windowFrom(text, startIdx, stopKeywords = [], maxLen = 80) {\n  let segment = text.slice(startIdx, startIdx + maxLen);\n  let cut = segment.length;\n  for (const sk of stopKeywords) {\n    const pos = segment.indexOf(sk);\n    if (pos !== -1) cut = Math.min(cut, pos);\n  }\n  segment = segment.slice(0, cut);\n  segment = segment.replace(/\\s+/g, \" \").trim();\n  return segment || null;\n}\n\nfunction extractAfterKeyword(text, keyword, stopKeywords = [], maxLen = 80) {\n  const idx = text.indexOf(keyword);\n  if (idx === -1) return null;\n  return windowFrom(text, idx + keyword.length, stopKeywords, maxLen);\n}\n\n// ── ID number ───────────────────────────────────────────────────\nfunction extractIdNumber(texts) {\n  const combined = texts.join(\" \");\n  const clean = combined.replace(/[^0-9\\s]/g, \" \");\n\n  let m = clean.match(/\\b(\\d\\s?\\d{4}\\s?\\d{5}\\s?\\d{2}\\s?\\d)\\b/);\n  if (m) return m[1].replace(/\\s/g, \"\");\n\n  const digitsOnly = clean.replace(/\\s+/g, \"\");\n  m = digitsOnly.match(/(\\d{13})/);\n  if (m) return m[1];\n\n  for (const text of texts) {\n    const d = text.replace(/[^0-9]/g, \"\");\n    if (d.length === 13) return d;\n  }\n\n  return \"\";\n}\n\n// ── Date-near-keyword search ────────────────────────────────────\nfunction findDateNearKeyword(text, keywords, window = 40) {\n  const lower = text.toLowerCase();\n  for (const kw of keywords) {\n    const kwLower = kw.toLowerCase();\n    let searchStart = 0;\n    while (true) {\n      const idx = lower.indexOf(kwLower, searchStart);\n      if (idx === -1) break;\n      const segment = text.slice(idx, idx + kw.length + window);\n      const found = parseThaiDate(segment);\n      if (found) return found;\n      searchStart = idx + kw.length;\n    }\n  }\n  return \"\";\n}\n\nfunction findDateRawAndParsed(text, keywords, pattern, window = 40) {\n  const lower = text.toLowerCase();\n  for (const kw of keywords) {\n    const kwLower = kw.toLowerCase();\n    let searchStart = 0;\n    while (true) {\n      const idx = lower.indexOf(kwLower, searchStart);\n      if (idx === -1) break;\n      const segment = text.slice(idx, idx + kw.length + window);\n      const m = pattern.exec(fixOcrMonth(segment));\n      if (m) {\n        const raw = m[0].trim();\n        const parsed = parseThaiDate(raw);\n        if (parsed) return [raw, parsed];\n      }\n      searchStart = idx + kw.length;\n    }\n  }\n  return [\"\", \"\"];\n}\n\nfunction fixDatesInResult(result, rawText) {\n  const dateFields = {\n    date_of_issue: [\"วันออกบัตร\", \"Date of Issue\"],\n    date_of_expiry: [\"วันบัตรหมดอายุ\", \"วันหมดอายุ\", \"Date of Expiry\"],\n  };\n\n  for (const [field, keywords] of Object.entries(dateFields)) {\n    const val = result[field];\n    if (val && /^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(String(val))) continue;\n\n    const found = findDateNearKeyword(rawText, keywords);\n    if (found) result[field] = found;\n  }\n\n  return result;\n}\n\n// ── Address ─────────────────────────────────────────────────────\nconst ADDRESS_PART_PATTERNS = {\n  tambon: /(?:ต\\.|ตำบล|แขวง)\\s*(\\S+)/,\n  amphoe: /(?:อ\\.|อำเภอ|เขต)\\s*(\\S+)/,\n  province: /(?:จ\\.|จังหวัด)\\s*(\\S+)/,\n};\n\nfunction extractAddressParts(address) {\n  const result = { tambon: null, amphoe: null, province: null };\n  if (!address) return result;\n\n  for (const [key, pattern] of Object.entries(ADDRESS_PART_PATTERNS)) {\n    const m = pattern.exec(address);\n    if (m) result[key] = m[1].trim();\n  }\n\n  if (!result.province && address.includes(\"กรุงเทพมหานคร\")) {\n    result.province = \"กรุงเทพมหานคร\";\n  }\n\n  return result;\n}\n\n// ── Birthdate ───────────────────────────────────────────────────\nfunction extractBirthdateInfo(rawText) {\n  const [thRaw, thParsed] = findDateRawAndParsed(rawText, [\"เกิดวันที่\", \"วันเกิด\"], TH_DATE_RE);\n  const [enRaw, enParsed] = findDateRawAndParsed(rawText, [\"Date of Birth\", \"Birth\"], EN_DATE_RE);\n\n  let match = null;\n  if (thParsed && enParsed) match = thParsed === enParsed;\n\n  return {\n    date_of_birth_th: thRaw || null,\n    date_of_birth_en: enRaw || null,\n    date_of_birth: thParsed || enParsed || null,\n    date_of_birth_match: match,\n  };\n}\n\n// ── Main field extraction ───────────────────────────────────────\nfunction extractFieldsRuleBased(rawText) {\n  const rawLines = rawText.split(\"\\n\").map(l => l.trim()).filter(Boolean);\n\n  let result = {\n    id_number: null,\n    prefix_th: null,\n    first_name_th: null,\n    last_name_th: null,\n    prefix_en: null,\n    first_name_en: null,\n    last_name_en: null,\n    date_of_birth_th: null,\n    date_of_birth_en: null,\n    date_of_birth: null,\n    date_of_birth_match: null,\n    religion: null,\n    address: null,\n    tambon: null,\n    amphoe: null,\n    province: null,\n    date_of_issue: null,\n    date_of_expiry: null,\n  };\n\n  // ID number\n  result.id_number = extractIdNumber(rawLines) || null;\n\n  // Thai name\n  let nameThRaw = extractAfterKeyword(rawText, \"ชื่อตัวและชื่อสกุล\", [\"Name\"], 60);\n  if (!nameThRaw) {\n    for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n      const idx = rawText.indexOf(prefix);\n      if (idx !== -1) {\n        nameThRaw = windowFrom(rawText, idx, [\"Name\"], 60);\n        break;\n      }\n    }\n  }\n  Object.assign(result, splitThName(nameThRaw));\n\n  // English name\n  const nameEnRaw = extractAfterKeyword(rawText, \"Name\", [\"เกิดวันที่\", \"Date of Birth\"], 60);\n  Object.assign(result, splitEnName(nameEnRaw));\n\n  // Religion\n  result.religion = extractAfterKeyword(rawText, \"ศาสนา\", [\"ที่อยู่\"], 30);\n\n  // Address\n  result.address = extractAfterKeyword(rawText, \"ที่อยู่\", [\"วันออกบัตร\", \"Date of Issue\"], 200);\n\n  // Address parts\n  Object.assign(result, extractAddressParts(result.address));\n\n  // Birthdate\n  Object.assign(result, extractBirthdateInfo(rawText));\n\n  // Issue / expiry dates\n  result = fixDatesInResult(result, rawText);\n\n  // Trim all string values\n  for (const k of Object.keys(result)) {\n    if (typeof result[k] === \"string\") result[k] = result[k].trim();\n  }\n\n  return result;\n}\n\n// ── n8n entry point ─────────────────────────────────────────────\nconst items = $input.all();\n\nreturn items.map((item) => {\n  const rawText = item.json?.message?.content || \"\";\n\n  let fields;\n  try {\n    fields = extractFieldsRuleBased(rawText);\n  } catch (e) {\n    fields = { _error: `Field extraction failed: ${e.message}` };\n  }\n\n  fields.raw_ocr_text = rawText;\n\n  return { json: fields };\n});"
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// Thai National ID OCR — rule-based field extraction ONLY.\n// Ported from Python. Takes raw OCR text (from an upstream OCR/HTTP node)\n// and turns it into structured fields. No file I/O, no Ollama call.\n// Use in an n8n Code node set to \"Run Once for All Items\".\n// ════════════════════════════════════════════════════════════════════════\n\n// ── Month mappings ──────────────────────────────────────────────────────\nconst TH_MONTHS = {\n  \"มกราคม\": \"01\", \"ม.ค.\": \"01\", \"ม.ค\": \"01\",\n  \"กุมภาพันธ์\": \"02\", \"ก.พ.\": \"02\", \"ก.พ\": \"02\",\n  \"มีนาคม\": \"03\", \"มี.ค.\": \"03\", \"มี.ค\": \"03\",\n  \"เมษายน\": \"04\", \"เม.ย.\": \"04\", \"เม.ย\": \"04\",\n  \"พฤษภาคม\": \"05\", \"พ.ค.\": \"05\", \"พ.ค\": \"05\",\n  \"มิถุนายน\": \"06\", \"มิ.ย.\": \"06\", \"มิ.ย\": \"06\",\n  \"กรกฎาคม\": \"07\", \"ก.ค.\": \"07\", \"ก.ค\": \"07\",\n  \"สิงหาคม\": \"08\", \"ส.ค.\": \"08\", \"ส.ค\": \"08\",\n  \"กันยายน\": \"09\", \"ก.ย.\": \"09\", \"ก.ย\": \"09\",\n  \"ตุลาคม\": \"10\", \"ต.ค.\": \"10\", \"ต.ค\": \"10\",\n  \"พฤศจิกายน\": \"11\", \"พ.ย.\": \"11\", \"พ.ย\": \"11\",\n  \"ธันวาคม\": \"12\", \"ธ.ค.\": \"12\", \"ธ.ค\": \"12\",\n};\n\nconst EN_MONTHS = {\n  \"january\": \"01\", \"jan\": \"01\", \"jan.\": \"01\",\n  \"february\": \"02\", \"feb\": \"02\", \"feb.\": \"02\",\n  \"march\": \"03\", \"mar\": \"03\", \"mar.\": \"03\",\n  \"april\": \"04\", \"apr\": \"04\", \"apr.\": \"04\",\n  \"may\": \"05\",\n  \"june\": \"06\", \"jun\": \"06\", \"jun.\": \"06\",\n  \"july\": \"07\", \"jul\": \"07\", \"jul.\": \"07\",\n  \"august\": \"08\", \"aug\": \"08\", \"aug.\": \"08\",\n  \"september\": \"09\", \"sep\": \"09\", \"sep.\": \"09\",\n  \"october\": \"10\", \"oct\": \"10\", \"oct.\": \"10\",\n  \"november\": \"11\", \"nov\": \"11\", \"nov.\": \"11\",\n  \"december\": \"12\", \"dec\": \"12\", \"dec.\": \"12\",\n};\n\nconst OCR_MONTH_FIXES = {\n  \"พ.8.\": \"พ.ย.\", \"พ.8\": \"พ.ย\",\n  \"ม.1.\": \"ม.ค.\", \"ม.1\": \"ม.ค\",\n  \"ก.1.\": \"ก.ค.\", \"ก.1\": \"ก.ค\",\n  \"ก.8.\": \"ก.ย.\", \"ก.8\": \"ก.ย\",\n  \"ส.1.\": \"ส.ค.\", \"ส.1\": \"ส.ค\",\n  \"ต.1.\": \"ต.ค.\", \"ต.1\": \"ต.ค\",\n  \"ธ.1.\": \"ธ.ค.\", \"ธ.1\": \"ธ.ค\",\n  \"มิ.8.\": \"มิ.ย.\", \"มิ.8\": \"มิ.ย\",\n  \"มี.1.\": \"มี.ค.\", \"มี.1\": \"มี.ค\",\n  \"เม.8.\": \"เม.ย.\", \"เม.8\": \"เม.ย\",\n};\n\n// ── Name prefixes (full list — includes ranks/titles missing from the old JS) ──\nconst TH_NAME_PREFIXES = [\n  \"นาย\", \"นาง\", \"นางสาว\",\n  \"น.ส.\", \"น.ส\", \"นส.\", \"นส\",\n  \"ด.ช.\", \"ด.ช\", \"ด.ญ.\", \"ด.ญ\", \"พระ\", \"จ.ส.อ.\",\n  \"พ.ต.ท.\", \"ร.ต.ท.\", \"ว่าที่ ร.ต.\", \"ว่าที่ ร.ต.หญิง\", \"ส.อ.\", \"หม่อมหลวง\",\n];\nconst TH_NAME_PREFIXES_NORMALIZED = {\n  \"นาย\": \"นาย\", \"นาง\": \"นาง\", \"นางสาว\": \"นางสาว\",\n  \"น.ส.\": \"น.ส.\", \"น.ส\": \"น.ส.\", \"นส.\": \"น.ส.\", \"นส\": \"น.ส.\",\n  \"ด.ช.\": \"ด.ช.\", \"ด.ช\": \"ด.ช.\", \"ด.ญ.\": \"ด.ญ.\", \"ด.ญ\": \"ด.ญ.\",\n  \"พระ\": \"พระ\", \"พ.ต.ท.\": \"พ.ต.ท.\", \"ร.ต.ท.\": \"ร.ต.ท.\",\n  \"ว่าที่ ร.ต.\": \"ว่าที่ ร.ต.\", \"ว่าที่ ร.ต.หญิง\": \"ว่าที่ ร.ต.หญิง\",\n  \"ว่าที่ร.ต.\": \"ว่าที่ ร.ต.\", \"ว่าที่ร.ต.หญิง\": \"ว่าที่ ร.ต.หญิง\",\n  \"ส.อ.\": \"ส.อ.\", \"หม่อมหลวง\": \"หม่อมหลวง\", \"จ.ส.อ.\": \"จ.ส.อ.\", \"จสอ\": \"จ.ส.อ.\",\n};\n\nconst EN_NAME_PREFIXES_NORMALIZED = {\n  \"Mr.\": \"Mr.\",\n  \"Mrs.\": \"Mrs.\",\n  \"Miss\": \"Miss\",\n  \"Ms.\": \"Ms.\",\n  \"Dr.\": \"Dr.\",\n  \"Sm 1\": \"Sm 1\",\n  \"Smt 1\": \"Smt 1\",\n  \"Acting Sub.LT\": \"Acting Sub Lt.\",\n  \"Acting Sub Lt.\": \"Acting Sub Lt.\",\n};\n\n// ── Utilities ───────────────────────────────────────────────────────────\nfunction escapeRegExp(s) {\n  return s.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n}\nfunction sortedByLenDesc(arr) {\n  return [...arr].sort((a, b) => b.length - a.length);\n}\n\nconst SORTED_EN_PREFIXES = sortedByLenDesc(Object.keys(EN_NAME_PREFIXES_NORMALIZED));\nconst EN_PREFIX_PATTERN = SORTED_EN_PREFIXES.map(escapeRegExp).join(\"|\");\nconst EN_PREFIX_RE = new RegExp(`^(${EN_PREFIX_PATTERN})(?=[.\\\\s]|$)`, \"i\");\n\n// ── Name helpers ────────────────────────────────────────────────────────\nfunction fixNameEn(name) {\n  if (!name) return name;\n  name = name.trim();\n\n  const m = EN_PREFIX_RE.exec(name);\n  if (m) {\n    const matched = m[1];\n    const normKey = SORTED_EN_PREFIXES.find(p => p.toLowerCase() === matched.toLowerCase());\n    const normalized = EN_NAME_PREFIXES_NORMALIZED[normKey];\n    let rest = name.slice(m[0].length).replace(/^[.\\s]+/, \"\");\n    name = rest ? `${normalized} ${rest}`.trim() : normalized;\n  }\n\n  name = name.replace(/\\bLast\\s*name\\b/gi, \"\");\n  name = name.replace(/\\s{2,}/g, \" \").trim();\n  return name;\n}\n\nfunction fixNameTh(name) {\n  if (!name) return name;\n  for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n    if (name.startsWith(prefix)) {\n      const normalized = TH_NAME_PREFIXES_NORMALIZED[prefix];\n      let rest = name.slice(prefix.length);\n      if (rest && !rest.startsWith(\" \")) {\n        name = normalized + \" \" + rest;\n      }\n      break;\n    }\n  }\n  return name.replace(/ {2,}/g, \" \").trim();\n}\n\nfunction splitThName(name) {\n  const result = { prefix_th: null, first_name_th: null, last_name_th: null };\n  if (!name) return result;\n\n  name = fixNameTh(name);\n  let rest = name;\n  for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n    const normalized = TH_NAME_PREFIXES_NORMALIZED[prefix];\n    if (name.startsWith(normalized)) {\n      result.prefix_th = normalized;\n      rest = name.slice(normalized.length).trim();\n      break;\n    }\n  }\n\n  const tokens = rest.split(/\\s+/).filter(Boolean);\n  if (tokens.length) result.first_name_th = tokens[0] || null;\n  if (tokens.length > 1) result.last_name_th = tokens.slice(1).join(\" \") || null;\n\n  return result;\n}\n\nfunction splitEnName(name) {\n  const result = { prefix_en: null, first_name_en: null, last_name_en: null };\n  if (!name) return result;\n\n  name = fixNameEn(name);\n  let rest = name;\n\n  const normalizedPrefixes = sortedByLenDesc([...new Set(Object.values(EN_NAME_PREFIXES_NORMALIZED))]);\n  const prefixPattern = normalizedPrefixes.map(escapeRegExp).join(\"|\");\n  const re = new RegExp(`^(${prefixPattern})\\\\s+(.*)$`, \"i\");\n  const match = re.exec(name);\n\n  if (match) {\n    result.prefix_en = match[1];\n    rest = match[2].trim();\n  }\n\n  const tokens = rest.split(/\\s+/).filter(Boolean);\n  if (tokens.length) result.first_name_en = tokens[0] || null;\n  if (tokens.length > 1) result.last_name_en = tokens.slice(1).join(\" \") || null;\n\n  return result;\n}\n\n// ── Date helpers ────────────────────────────────────────────────────────\nfunction fixOcrMonth(text) {\n  for (const [wrong, right] of Object.entries(OCR_MONTH_FIXES)) {\n    if (text.includes(wrong)) text = text.split(wrong).join(right);\n  }\n  return text;\n}\n\nconst TH_MONTH_ALT = sortedByLenDesc(Object.keys(TH_MONTHS)).map(escapeRegExp).join(\"|\");\nconst TH_DATE_RE = new RegExp(`(\\\\d{1,2})\\\\s*(${TH_MONTH_ALT})\\\\s*(\\\\d{2,4})`);\n\nconst EN_MONTH_ALT = sortedByLenDesc(Object.keys(EN_MONTHS)).map(escapeRegExp).join(\"|\");\nconst EN_DATE_RE = new RegExp(`(\\\\d{1,2})\\\\s*(${EN_MONTH_ALT})\\\\.?,?\\\\s*(\\\\d{2,4})`, \"i\");\n\nfunction parseThaiDate(text) {\n  text = fixOcrMonth(text.trim());\n\n  let m = TH_DATE_RE.exec(text);\n  if (m) {\n    const day = m[1].padStart(2, \"0\");\n    const mm = TH_MONTHS[m[2]];\n    let yearBe = parseInt(m[3], 10);\n    if (yearBe < 100) yearBe += 2500;\n    const yearCe = yearBe > 2400 ? yearBe - 543 : yearBe;\n    return `${day}/${mm}/${yearCe}`;\n  }\n\n  m = EN_DATE_RE.exec(text);\n  if (m) {\n    const day = m[1].padStart(2, \"0\");\n    const mm = EN_MONTHS[m[2].toLowerCase()];\n    let year = parseInt(m[3], 10);\n    if (year < 100) year += year > 50 ? 1900 : 2000;\n    return `${day}/${mm}/${year}`;\n  }\n\n  return \"\";\n}\n\n// ── Window / keyword extraction ──────────────────────────────────────────\nfunction windowFrom(text, startIdx, stopKeywords = [], maxLen = 80) {\n  let segment = text.slice(startIdx, startIdx + maxLen);\n  let cut = segment.length;\n  for (const sk of stopKeywords) {\n    const pos = segment.indexOf(sk);\n    if (pos !== -1) cut = Math.min(cut, pos);\n  }\n  segment = segment.slice(0, cut);\n  segment = segment.replace(/\\s+/g, \" \").trim();\n  return segment || null;\n}\n\nfunction extractAfterKeyword(text, keyword, stopKeywords = [], maxLen = 80) {\n  const idx = text.indexOf(keyword);\n  if (idx === -1) return null;\n  return windowFrom(text, idx + keyword.length, stopKeywords, maxLen);\n}\n\n// ── ID number ───────────────────────────────────────────────────────────\nfunction extractIdNumber(texts) {\n  const combined = texts.join(\" \");\n  const clean = combined.replace(/[^0-9\\s]/g, \" \");\n\n  let m = clean.match(/\\b(\\d\\s?\\d{4}\\s?\\d{5}\\s?\\d{2}\\s?\\d)\\b/);\n  if (m) return m[1].replace(/\\s/g, \"\");\n\n  const digitsOnly = clean.replace(/\\s+/g, \"\");\n  m = digitsOnly.match(/(\\d{13})/);\n  if (m) return m[1];\n\n  for (const text of texts) {\n    const d = text.replace(/[^0-9]/g, \"\");\n    if (d.length === 13) return d;\n  }\n\n  return \"\";\n}\n\n// ── Date-near-keyword search ─────────────────────────────────────────────\nfunction findDateNearKeyword(text, keywords, windowSize = 40) {\n  const lower = text.toLowerCase();\n  for (const kw of keywords) {\n    const kwLower = kw.toLowerCase();\n    let searchStart = 0;\n    while (true) {\n      const idx = lower.indexOf(kwLower, searchStart);\n      if (idx === -1) break;\n      const segment = text.slice(idx, idx + kw.length + windowSize);\n      const found = parseThaiDate(segment);\n      if (found) return found;\n      searchStart = idx + kw.length;\n    }\n  }\n  return \"\";\n}\n\nfunction findDateRawAndParsed(text, keywords, pattern, windowSize = 40) {\n  const lower = text.toLowerCase();\n  for (const kw of keywords) {\n    const kwLower = kw.toLowerCase();\n    let searchStart = 0;\n    while (true) {\n      const idx = lower.indexOf(kwLower, searchStart);\n      if (idx === -1) break;\n      const segment = text.slice(idx, idx + kw.length + windowSize);\n      const m = pattern.exec(fixOcrMonth(segment));\n      if (m) {\n        const raw = m[0].trim();\n        const parsed = parseThaiDate(raw);\n        if (parsed) return [raw, parsed];\n      }\n      searchStart = idx + kw.length;\n    }\n  }\n  return [\"\", \"\"];\n}\n\nfunction fixDatesInResult(result, rawText) {\n  const dateFields = {\n    date_of_issue: [\"วันออกบัตร\", \"Date of Issue\"],\n    date_of_expiry: [\"วันบัตรหมดอายุ\", \"วันหมดอายุ\", \"Date of Expiry\"],\n  };\n\n  for (const [field, keywords] of Object.entries(dateFields)) {\n    const val = result[field];\n    if (val && /^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(String(val))) continue;\n\n    const found = findDateNearKeyword(rawText, keywords);\n    if (found) result[field] = found;\n  }\n\n  return result;\n}\n\n// ── Address ───────────────────────────────────────────────────────────────\nconst ADDRESS_PART_PATTERNS = {\n  tambon: /(?:ต\\.|ตำบล|แขวง)\\s*(\\S+)/,\n  amphoe: /(?:อ\\.|อำเภอ|เขต)\\s*(\\S+)/,\n  province: /(?:จ\\.|จังหวัด)\\s*(\\S+)/,\n};\n\nfunction extractAddressParts(address) {\n  const result = { tambon: null, amphoe: null, province: null };\n  if (!address) return result;\n\n  for (const [key, pattern] of Object.entries(ADDRESS_PART_PATTERNS)) {\n    const m = pattern.exec(address);\n    if (m) result[key] = m[1].trim();\n  }\n\n  if (!result.province && address.includes(\"กรุงเทพมหานคร\")) {\n    result.province = \"กรุงเทพมหานคร\";\n  }\n\n  return result;\n}\n\n// ── Birthdate ────────────────────────────────────────────────────────────\nfunction extractBirthdateInfo(rawText) {\n  const [thRaw, thParsed] = findDateRawAndParsed(rawText, [\"เกิดวันที่\", \"วันเกิด\"], TH_DATE_RE);\n  const [enRaw, enParsed] = findDateRawAndParsed(rawText, [\"Date of Birth\", \"Birth\"], EN_DATE_RE);\n\n  let match = null;\n  if (thParsed && enParsed) match = thParsed === enParsed;\n\n  return {\n    date_of_birth_th: thRaw || null,\n    date_of_birth_en: enRaw || null,\n    date_of_birth: thParsed || enParsed || null,\n    date_of_birth_match: match,\n  };\n}\n\n// ── Main rule-based field extraction ───────────────────────────────────────\nfunction extractFieldsRuleBased(rawText) {\n  const rawLines = rawText.split(\"\\n\").map(l => l.trim()).filter(Boolean);\n\n  let result = {\n    id_number: null,\n    prefix_th: null,\n    first_name_th: null,\n    last_name_th: null,\n    prefix_en: null,\n    first_name_en: null,\n    last_name_en: null,\n    date_of_birth_th: null,\n    date_of_birth_en: null,\n    date_of_birth: null,\n    date_of_birth_match: null,\n    religion: null,\n    address: null,\n    tambon: null,\n    amphoe: null,\n    province: null,\n    date_of_issue: null,\n    date_of_expiry: null,\n  };\n\n  result.id_number = extractIdNumber(rawLines) || null;\n\n  // Thai name\n  let nameThRaw = extractAfterKeyword(rawText, \"ชื่อตัวและชื่อสกุล\", [\"Name\"], 60);\n  if (!nameThRaw) {\n    for (const prefix of sortedByLenDesc(TH_NAME_PREFIXES)) {\n      const idx = rawText.indexOf(prefix);\n      if (idx !== -1) {\n        nameThRaw = windowFrom(rawText, idx, [\"Name\"], 60);\n        break;\n      }\n    }\n  }\n  Object.assign(result, splitThName(nameThRaw));\n\n  // English name\n  const nameEnRaw = extractAfterKeyword(rawText, \"Name\", [\"เกิดวันที่\", \"Date of Birth\"], 60);\n  Object.assign(result, splitEnName(nameEnRaw));\n\n  // Religion\n  result.religion = extractAfterKeyword(rawText, \"ศาสนา\", [\"ที่อยู่\"], 30);\n\n  // Address\n  result.address = extractAfterKeyword(rawText, \"ที่อยู่\", [\"วันออกบัตร\", \"Date of Issue\"], 200);\n  Object.assign(result, extractAddressParts(result.address));\n\n  // Birthdate\n  Object.assign(result, extractBirthdateInfo(rawText));\n\n  // Issue / expiry dates\n  result = fixDatesInResult(result, rawText);\n\n  // Trim all string values\n  for (const k of Object.keys(result)) {\n    if (typeof result[k] === \"string\") result[k] = result[k].trim();\n  }\n\n  return result;\n}\n\n// ── n8n entry point ─────────────────────────────────────────────────────\n// Expects each input item to carry the raw OCR text from an upstream node\n// (e.g. an HTTP Request node calling Ollama). Adjust the field below to\n// match wherever your raw text actually lives — default assumes the same\n// shape as your original JS node: item.json.message.content\nconst items = $input.all();\n\nreturn items.map((item) => {\n  const rawText = item.json?.message?.content || item.json?.raw_ocr_text || \"\";\n\n  let fields;\n  try {\n    fields = extractFieldsRuleBased(rawText);\n  } catch (e) {\n    fields = { _error: `Field extraction failed: ${e.message}` };\n  }\n\n  fields.raw_ocr_text = rawText;\n\n  return { json: fields };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1088,
-        -480
+        1328,
+        -496
       ],
       "id": "95eb85a4-1449-45ee-848b-ca4f398108fa",
       "name": "Parse Output"
-    },
-    {
-      "parameters": {
-        "operation": "write",
-        "fileName": "={{ \n  \"C:/Users/jakgh/.n8n-files/results/\" +\n  \"ocr_results_\" +\n  $now.toFormat(\"yyyy-MM-dd_HH-mm-ss\") +\n  \".csv\"\n}}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1.1,
-      "position": [
-        1952,
-        -480
-      ],
-      "id": "10fd96d7-5748-4dcb-b3b6-473a99802b47",
-      "name": "Read/Write Files from Disk1"
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "type": "n8n-nodes-base.convertToFile",
-      "typeVersion": 1.1,
-      "position": [
-        1728,
-        -480
-      ],
-      "id": "810bc0bb-7dc2-446c-a1b6-ff193c8d29a5",
-      "name": "Convert to File"
     },
     {
       "parameters": {
@@ -109,8 +81,8 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        1312,
-        -384
+        1552,
+        -400
       ],
       "id": "32421c8a-6421-4375-9748-39b4dde4f9ea",
       "name": "Merge"
@@ -206,8 +178,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -16,
-        -272
+        -144,
+        -240
       ],
       "id": "ef2b83cc-cfc5-4094-a68f-db8ea165dc52",
       "name": "Create a data table"
@@ -220,7 +192,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -432,
+        -528,
         -352
       ],
       "id": "a89fa8c3-f2a9-4f6e-8f80-4bf3417ce580",
@@ -503,22 +475,22 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1728,
-        -304
+        1872,
+        -400
       ],
       "id": "245ddb6d-8e9a-4b30-8d66-7b9f0b302a8b",
       "name": "Upsert row(s)"
     },
     {
       "parameters": {
-        "fileSelector": "=C:/Users/jakgh/.n8n-files/ids/{{$now.toFormat('yyyy-MM-dd')}}/**",
+        "fileSelector": "={{$json.basePath}}/{{$now.toFormat('yyyy-MM-dd')}}/**",
         "options": {}
       },
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1.1,
       "position": [
-        176,
-        -368
+        192,
+        -496
       ],
       "id": "69cfef7e-03f4-4e1b-b4be-5a2324e71342",
       "name": "Read Today's Folder"
@@ -550,7 +522,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -224,
+        -320,
         -352
       ],
       "id": "44822e7f-270f-46ad-9799-4b6d25534e98",
@@ -583,21 +555,21 @@
       "type": "n8n-nodes-base.filter",
       "typeVersion": 2.3,
       "position": [
-        352,
-        -368
+        368,
+        -496
       ],
       "id": "1b89ad04-5ef5-44f5-94be-1503d70294f6",
       "name": "Filter out processed files"
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfor (const item of $input.all()) {\n  const dir = 'C:/Users/jakgh/.n8n-files/ids/' + $now.toFormat('yyyy-MM-dd') + '/';\n  const oldPath = dir + item.json.fileName;\n  const ext = path.extname(item.json.fileName);\n  const base = path.basename(item.json.fileName, ext);\n  const newPath = dir + base + '_processed' + ext;\n\n  fs.renameSync(oldPath, newPath);\n  item.json.fileName = base + '_processed' + ext;\n  item.json.filePath = newPath;\n}\n\nreturn $input.all();"
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst allItems = $input.all();\n\n// Find the item that holds basePath (could be anywhere in the array)\nconst basePathItem = allItems.find(item => item.json.basePath);\nif (!basePathItem) {\n  throw new Error('No item with \"basePath\" found in input');\n}\nconst basePath = basePathItem.json.basePath;\n\nconst dir = path.join(basePath, $now.toFormat('yyyy-MM-dd'));\n\n// Only process items that actually represent files\nconst fileItems = allItems.filter(item => item.json.fileName);\n\nconst results = [];\n\nfor (const item of fileItems) {\n  const oldPath = path.join(dir, item.json.fileName);\n  const ext = path.extname(item.json.fileName);\n  const base = path.basename(item.json.fileName, ext);\n  const newFileName = base + '_processed' + ext;\n  const newPath = path.join(dir, newFileName);\n\n  try {\n    fs.renameSync(oldPath, newPath);\n    item.json.fileName = newFileName;\n    item.json.filePath = newPath;\n  } catch (err) {\n    item.json.error = `Rename failed for ${oldPath}: ${err.message}`;\n  }\n\n  results.push(item);\n}\n\nreturn results;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        560,
-        -368
+        800,
+        -384
       ],
       "id": "34afe639-65bb-4327-90f0-0f71e7f46459",
       "name": "Flag files as Processed"
@@ -609,27 +581,61 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1472,
-        -384
+        1712,
+        -400
       ],
       "id": "9b73f78b-6b7d-46d5-8c59-a6b78eab0f60",
       "name": "Merge/Remove Duplicates"
     },
     {
       "parameters": {
-        "content": "# ID-OCR Setup Guide\n\n## Folder Structure\n\nCreate the following folder structure in the **same directory as your `.n8n` folder** (typically `C:\\Users\\<your_username>\\` on Windows):\n\n```text\nC:\\\n└── Users\\\n    └── <your_username>\\\n        ├── .n8n\\\n        └── .n8n-files\\\n            └── ids\\\n                └── 2026-07-06\\   ← Only today's dated folder is processed\n```\n\nConfig the HTTP Request node's Ollama Credential to your local Ollama instance, set its baseURL to [http://127.0.0.1:11434]\n\n---\n\n## Start n8n\n\nOpen **PowerShell** and run:\n\n```powershell\n$env:NODE_FUNCTION_ALLOW_BUILTIN=\"fs,path\"\nnpx n8n\n```\n\n---\n\n## Processing Logic\n\n1. Scan the `.n8n-files/ids/` directory.\n2. Find the subfolder whose name matches **today's date** (`YYYY-MM-DD`).\n3. Process **only** the files inside that folder that does not have the word **processed** in its name.",
+        "content": "# ID-OCR Setup Guide\n\n## Folder Structure\n\nCreate the following folder structure in the **same directory as your `.n8n` folder** (typically `C:\\Users\\<your_username>\\` on Windows):\n\n```text\nC:\\\n└── Users\\\n    └── <your_username>\\\n        ├── .n8n\\\n        └── .n8n-files\\\n            └── ids\\\n                └── 2026-07-06\\   ← Only today's dated folder is processed\n```\n\nConfig the HTTP Request node's Ollama Credential to your local Ollama instance, set its baseURL to [http://127.0.0.1:11434]\n\nSet your path in the \"Edit your path here\" node\n\n---\n\n## Start n8n\n\nOpen **PowerShell** and run:\n\n```powershell\n$env:NODE_FUNCTION_ALLOW_BUILTIN=\"fs,path\"\nnpx n8n\n```\n\n---\n\n## Processing Logic\n\n1. Scan the `.n8n-files/ids/` directory.\n2. Find the subfolder whose name matches **today's date** (`YYYY-MM-DD`).\n3. Process **only** the files inside that folder that does not have the word **processed** in its name.",
         "height": 624,
         "width": 992,
         "color": "#151819"
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        -688,
-        -1136
+        -800,
+        -1168
       ],
       "typeVersion": 1,
       "id": "d58d6d45-cb5b-4ee5-94a7-a1169c1f7c21",
       "name": "Sticky Note"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        624,
+        -384
+      ],
+      "id": "95c2c373-e64b-4210-a387-b6e82782d55f",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f07374a1-4c09-4120-8b98-6ef06c59c5a0",
+              "name": "basePath",
+              "value": "C:/Users/jakgh/.n8n-files/ids",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        16,
+        -368
+      ],
+      "id": "a3ee6343-c69d-49a8-b3b2-bfa4ec0d2668",
+      "name": "Edit your path here"
     }
   ],
   "pinData": {},
@@ -678,22 +684,6 @@
         ]
       ]
     },
-    "Read/Write Files from Disk1": {
-      "main": [
-        []
-      ]
-    },
-    "Convert to File": {
-      "main": [
-        [
-          {
-            "node": "Read/Write Files from Disk1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Merge": {
       "main": [
         [
@@ -709,7 +699,7 @@
       "main": [
         [
           {
-            "node": "Read Today's Folder",
+            "node": "Edit your path here",
             "type": "main",
             "index": 0
           }
@@ -747,7 +737,7 @@
       "main": [
         [
           {
-            "node": "Read Today's Folder",
+            "node": "Edit your path here",
             "type": "main",
             "index": 0
           }
@@ -765,7 +755,7 @@
       "main": [
         [
           {
-            "node": "Flag files as Processed",
+            "node": "Merge1",
             "type": "main",
             "index": 0
           }
@@ -795,11 +785,33 @@
             "node": "Upsert row(s)",
             "type": "main",
             "index": 0
-          },
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
           {
-            "node": "Convert to File",
+            "node": "Flag files as Processed",
             "type": "main",
             "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit your path here": {
+      "main": [
+        [
+          {
+            "node": "Read Today's Folder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
           }
         ]
       ]
@@ -811,7 +823,7 @@
     "binaryMode": "separate",
     "availableInMCP": true
   },
-  "versionId": "901fddd4-6066-4221-8c88-539638b3e39f",
+  "versionId": "4ff704d0-7069-4ea6-8f72-b3a7a1b42f5c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "d05f945e90475f5dbc13bb6f28f8cc1c44919af99fbb91c4dd516933a7c3fe69"
@@ -819,10 +831,10 @@
   "id": "Rx3SNMupFeuaoPPI",
   "tags": [
     {
-      "name": "ocr",
-      "id": "702xAXOhsZHCI538",
       "updatedAt": "2026-07-06T08:39:56.579Z",
-      "createdAt": "2026-07-06T08:39:56.579Z"
+      "createdAt": "2026-07-06T08:39:56.579Z",
+      "id": "702xAXOhsZHCI538",
+      "name": "ocr"
     }
   ]
 }
