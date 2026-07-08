@@ -192,6 +192,8 @@ Set the **Base URL** to:
 http://127.0.0.1:11434
 ```
 
+Set the **Edit your path here** Node in n8n to your user path
+
 ---
 
 ## 4. Start n8n
