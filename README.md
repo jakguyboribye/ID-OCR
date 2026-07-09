@@ -159,6 +159,8 @@ All results across the processed images are collected into a single output JSON,
 
 # n8n Integration (Optional)
 
+![n8n Workflow](n8n_workflow.png)
+
 An example n8n workflow (`ID-OCR.json`) is included to automate the OCR pipeline.
 
 ## 1. Install n8n
