@@ -4,11 +4,14 @@ import argparse
 import os
 
 MIN_DIM = 1000
+TEMPLATE_PATH = 'template/template.jpg'
 
 def reorient(img):
+    if not os.path.isfile(TEMPLATE_PATH):
+        return img
     _,w_og=img.shape
 
-    template = cv2.imread('template/template.jpg')
+    template = cv2.imread(TEMPLATE_PATH)
     template = cv2.cvtColor(template,cv2.COLOR_BGR2GRAY)
     if template.shape[1] >w_og//2:
         template = template[:,:w_og//2 -1]
